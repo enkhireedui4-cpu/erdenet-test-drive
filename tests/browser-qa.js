@@ -111,6 +111,26 @@ async (page) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   reports.push("reduced motion reveals instantly");
 
+  // While a lead stays pending, status polls must not move the wheel or replace the prize announcement.
+  status = "pending";
+  await page.evaluate(() => localStorage.removeItem("sain-erdenet-spun-v2"));
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("#spin-button").waitFor({ state: "visible" });
+  await page.locator("#spin-button").click();
+  await page.waitForFunction(() => document.querySelector("#registration").dataset.stage === "prize", null, { timeout: 7000 });
+  const snapshot = () => page.evaluate(() => ({ transform: getComputedStyle(document.querySelector("#wheel-rotor")).transform, live: document.querySelector("#form-status").textContent }));
+  const revealed = await snapshot();
+  await page.waitForTimeout(11_500);
+  const afterPoll = await snapshot();
+  check(afterPoll.transform === revealed.transform, `A pending poll moved the wheel (${revealed.transform} -> ${afterPoll.transform})`);
+  check(afterPoll.live === revealed.live && afterPoll.live.includes("Тэмдэглэлийн дэвтэр"), "A pending poll replaced the prize announcement");
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("#prize-card").waitFor({ state: "visible" });
+  const reloaded = await snapshot();
+  await page.waitForTimeout(800);
+  check((await snapshot()).transform === reloaded.transform, "Reloading while pending must not redraw the wheel twice");
+  reports.push("pending polls leave the revealed wheel and announcement alone");
+
   await page.evaluate(keys => keys.forEach(key => localStorage.removeItem(key)), KEYS);
   await page.unroute("**/api/leads"); await page.unroute("**/api/leads/*");
   await page.reload({ waitUntil: "networkidle" });
@@ -126,7 +146,13 @@ async (page) => {
   const sticky = page.locator("#mobile-register-button");
   check(await sticky.isVisible(), "Red registration button must be visible on mobile from page entry");
   const color = await sticky.evaluate(el => getComputedStyle(el).backgroundColor);
-  check(color === "rgb(240, 20, 45)", `Bottom CTA must use Sain red (got ${color})`);
+  check(color === "rgb(224, 16, 42)", `Bottom CTA must use the button red (got ${color})`);
+  const contrast = await page.evaluate(() => {
+    const lum = rgb => { const [r, g, b] = rgb.match(/[0-9]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    const ratio = el => { const s = getComputedStyle(el); const [a, b] = [lum(s.color), lum(s.backgroundColor)].sort((x, y) => y - x); return (a + .05) / (b + .05); };
+    return { submit: ratio(document.querySelector("#submit-button")), mobile: ratio(document.querySelector("#mobile-register-button")) };
+  });
+  check(contrast.submit >= 4.5 && contrast.mobile >= 4.5, `Red buttons need 4.5:1 text contrast (submit ${contrast.submit.toFixed(2)}, mobile ${contrast.mobile.toFixed(2)})`);
   await sticky.click();
   await page.waitForFunction(() => document.querySelector("#registration").getBoundingClientRect().top < 160);
   await page.evaluate(() => new Promise(requestAnimationFrame));

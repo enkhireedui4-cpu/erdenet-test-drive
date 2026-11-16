@@ -5,7 +5,7 @@
 /* Tokens: the opening poster's dusk sky, the chrome logo and Sain red. */
 :root{
   --night:#0A1033;--dusk:#1C2A6E;--ember:#FF6A3D;--red:#F0142D;--chrome:#C9CED8;--paper:#F5F6FA;
-  --muted:#AEB5C7;--line:rgba(201,206,216,.16);--line-strong:rgba(201,206,216,.34);--error:#FF8E9C;
+  --red-button:#E0102A;--muted:#AEB5C7;--line:rgba(201,206,216,.16);--line-strong:rgba(201,206,216,.34);--error:#FF8E9C;
   --display:Zona,Inter,Arial,sans-serif;--text:Inter,Arial,sans-serif;
   color-scheme:dark;font-family:var(--text);font-size:16px
 }
@@ -108,7 +108,7 @@ h1{margin-top:36px;max-width:20ch;font:700 clamp(30px,3.6vw,48px)/1.12 var(--dis
 .choice-label:hover .day-card,.choice-label:hover .time-card{border-color:var(--chrome)}
 .choice-radio:checked+.day-card{border-color:var(--red);background:rgba(240,20,45,.16);box-shadow:inset 0 0 0 1px var(--red)}
 .choice-radio:checked+.day-card small{color:var(--paper)}
-.choice-radio:checked+.time-card{border-color:var(--red);background:var(--red);color:#fff}
+.choice-radio:checked+.time-card{border-color:var(--red-button);background:var(--red-button);color:#fff}
 .choice-radio:focus-visible+.day-card,.choice-radio:focus-visible+.time-card{outline:2px solid var(--paper);outline-offset:3px}
 .time-fieldset[aria-invalid="true"] .time-card{border-color:var(--error)}
 
@@ -129,8 +129,8 @@ h1{margin-top:36px;max-width:20ch;font:700 clamp(30px,3.6vw,48px)/1.12 var(--dis
 .registration-summary span{color:var(--muted);font-size:14px}
 .registration-summary strong{font-weight:600;text-align:right}
 
-.primary-button{display:inline-flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:58px;padding:0 24px;border:0;border-radius:14px;background:var(--red);color:#fff;font-size:17px;font-weight:600;letter-spacing:.01em;transition:background-color .2s,transform .1s}
-.primary-button:hover{background:#FF2A44}
+.primary-button{display:inline-flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:58px;padding:0 24px;border:0;border-radius:14px;background:var(--red-button);color:#fff;font-size:17px;font-weight:600;letter-spacing:.01em;transition:background-color .2s,transform .1s}
+.primary-button:hover{background:#C70E25}
 .primary-button:active{transform:scale(.99)}
 .primary-button:disabled{opacity:.7;cursor:progress}
 .button-loader{width:18px;height:18px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
@@ -211,7 +211,7 @@ h1{margin-top:36px;max-width:20ch;font:700 clamp(30px,3.6vw,48px)/1.12 var(--dis
   .site-footer{padding-bottom:112px}
   .mobile-cta{position:fixed;z-index:15;left:20px;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));display:block}
   .mobile-cta[hidden]{display:none}
-  .mobile-cta button{width:100%;min-height:56px;border:0;border-radius:16px;background:var(--red);color:#fff;font-size:17px;font-weight:600;box-shadow:0 16px 32px -12px rgba(240,20,45,.6),0 2px 8px rgba(0,0,0,.4)}
+  .mobile-cta button{width:100%;min-height:56px;border:0;border-radius:16px;background:var(--red-button);color:#fff;font-size:17px;font-weight:600;box-shadow:0 16px 32px -12px rgba(240,20,45,.6),0 2px 8px rgba(0,0,0,.4)}
   .mobile-cta button:disabled{opacity:.75}
 }
 @media (max-width:359px){

@@ -69,13 +69,14 @@ function loading(value) {
 
 // The wheel only reveals the prize the server drew; it never decides one.
 function spunPrize() { const spun = readStored(SPUN_KEY); return spun && spun.receipt === receipt && prizeLabel(spun.prize) ? spun.prize : ""; }
-function landingAngle(prizeId, turns = 0, jitter = 0) {
+function landingAngle(prizeId, turns = 0, jitter = 0, randomSlice = true) {
   // Slices run clockwise from 12 o'clock, 45° each; the pointer is fixed at 0°.
   const matches = slices.flatMap((slice, i) => slice.dataset.prize === prizeId ? [i] : []);
-  const k = matches[Math.floor(Math.random() * matches.length)];
+  const k = randomSlice ? matches[Math.floor(Math.random() * matches.length)] : matches[0];
   return 360 * turns + (360 - (k * 45 + 22.5)) + jitter;
 }
-function restWheel(prizeId) { rotor.style.transition = "none"; rotor.style.transform = `rotate(${landingAngle(prizeId)}deg)`; }
+// A restored reveal rests on a fixed slice so repeated renders never move the wheel.
+function restWheel(prizeId) { rotor.style.transition = "none"; rotor.style.transform = `rotate(${landingAngle(prizeId, 0, 0, false)}deg)`; }
 function spinTo(prizeId) {
   return new Promise(resolve => {
     const target = landingAngle(prizeId, 6, (Math.random() - 0.5) * 30);
@@ -120,11 +121,14 @@ spinButton.addEventListener("click", async () => {
 });
 
 function showResult(status, focus = true) {
+  const previousStage = panel.dataset.stage, previousStatus = resultMode;
   resultMode = status;
   mobileButton.textContent = "Бүртгэлийг харах";
   const synced = status === "synced";
   document.querySelector("#form-content").hidden = true; result.hidden = false;
-  const prize = spunPrize();
+  // The spin record only marks the reveal as done; the prize shown is the server's.
+  const spun = spunPrize();
+  const prize = spun ? (prizeLabel(acceptedPrize) ? acceptedPrize : spun) : "";
   const stage = prize ? "prize" : "spin";
   if (!spinning) panel.dataset.stage = stage;
   document.querySelector("#result-symbol").textContent = synced ? "✓" : "…";
@@ -136,10 +140,11 @@ function showResult(status, focus = true) {
   document.querySelector("#result-slot").textContent = slotLabel(acceptedSlot.day, acceptedSlot.time);
   retryButton.hidden = synced;
   if (!spinning) {
-    if (prize) { restWheel(prize); showPrize(prize); }
+    if (prize) { if (previousStage !== "prize") restWheel(prize); showPrize(prize); }
     else { spinButton.hidden = false; spinButton.disabled = !prizeLabel(acceptedPrize); prizeCard.hidden = true; }
   }
-  live.textContent = `${title} ${message}`.trim();
+  // Polls that change nothing must not replace an earlier announcement (such as the prize).
+  if (status !== previousStatus) live.textContent = `${title} ${message}`.trim();
   requestAnimationFrame(updateSticky);
   if (focus) result.focus({ preventScroll: true });
   if (synced) { clearTimeout(pollTimer); removeStored(OUTBOX_KEY); submitted = null; form.reset(); }
