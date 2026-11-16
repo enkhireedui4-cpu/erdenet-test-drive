@@ -58,13 +58,13 @@ export function createApp({ dbPath = path.join(ROOT, "data", "leads.sqlite"), ge
         try { lead = store.accept(input.data); } catch (error) { if (/conflict/i.test(error.message)) return json(res, 409, { error: "Мэдээлэл өөрчлөгдсөн байна. Дахин оролдоно уу." }); throw error; }
         await sync.send(lead.id);
         lead = store.byId(lead.id);
-        return json(res, lead.status === "synced" ? 201 : 202, { status: lead.status, receipt: lead.receipt, day: lead.day, time: lead.time });
+        return json(res, lead.status === "synced" ? 201 : 202, { status: lead.status, receipt: lead.receipt, day: lead.day, time: lead.time, prize: lead.prize });
       }
       if (pathname.startsWith("/api/leads/")) {
         if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
         const receipt = pathname.slice("/api/leads/".length);
         const lead = /^[A-Za-z0-9_-]{32}$/.test(receipt) ? store.byReceipt(receipt) : undefined;
-        return lead ? json(res, 200, { status: lead.status, day: lead.day, time: lead.time }) : json(res, 404, { error: "Not found" });
+        return lead ? json(res, 200, { status: lead.status, day: lead.day, time: lead.time, prize: lead.prize }) : json(res, 404, { error: "Not found" });
       }
       if (pathname === "/api/health" && req.method === "GET") {
         const config = getSheetConfig();

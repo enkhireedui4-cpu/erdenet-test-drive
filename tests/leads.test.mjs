@@ -67,6 +67,24 @@ test("exposes the four wheel prizes with Mongolian labels", () => {
   assert.ok(Object.isFrozen(PRIZES));
 });
 
+test("a new lead stores one server-drawn prize and retries keep it", (t) => {
+  const { store } = fixture(t);
+  const data = validateLead(input()).data;
+  const first = store.accept(data);
+  assert.ok(PRIZES.some(p => p.id === first.prize));
+  assert.equal(store.accept(data).prize, first.prize);
+});
+
+test("the same phone on the other day reuses its first prize", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "erdenet-prize-"));
+  let n = 0; const store = createLeadStore(path.join(directory, "l.sqlite"), { pickPrize: () => ["usb", "gift"][n++] });
+  t.after(() => { store.close(); rmSync(directory, { recursive: true, force: true }); });
+  const a = store.accept(validateLead(input()).data);
+  const b = store.accept(validateLead(input({ requestId: randomUUID(), day: "2026-11-29", time: "17:00" })).data);
+  assert.notEqual(a.id, b.id);
+  assert.equal(a.prize, "usb"); assert.equal(b.prize, "usb");
+});
+
 test("committed pending records and receipt tokens survive a process restart", (t) => {
   const f = fixture(t);
   const lead = f.store.accept(validateLead(input()).data);
@@ -106,6 +124,8 @@ test("Google outages leave a durable pending lead that a later worker synchroniz
   await success.send(lead.id);
   assert.equal(posted.secret, "test-only-secret");
   assert.equal(posted.event, EVENT_ID);
+  assert.ok(lead.prize);
+  assert.equal(posted.prize, lead.prize);
   assert.equal(restarted.byId(lead.id).status, "synced");
   assert.equal(restarted.pending().length, 0);
 });

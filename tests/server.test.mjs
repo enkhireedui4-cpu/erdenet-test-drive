@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createApp } from "../server.mjs";
+import { PRIZES } from "../public/lead-validation.js";
 
 async function fixture(t, overrides = {}) {
   const directory = mkdtempSync(path.join(tmpdir(), "erdenet-http-"));
@@ -26,10 +27,12 @@ test("intake returns pending only after durable storage; status exposes no perso
   const body = await response.json();
   assert.equal(body.status, "pending");
   assert.match(body.receipt, /^[A-Za-z0-9_-]{32,}$/);
+  assert.ok(PRIZES.some(p => p.id === body.prize), "intake returns the drawn prize");
   assert.equal(f.store.pending().length, 1);
   const status = await fetch(`${f.origin}/api/leads/${body.receipt}`).then(r => r.json());
   assert.equal(status.status, "pending");
-  assert.deepEqual(Object.keys(status).sort(), ["day", "status", "time"]);
+  assert.equal(status.prize, body.prize);
+  assert.deepEqual(Object.keys(status).sort(), ["day", "prize", "status", "time"]);
   assert.equal(status.day, "2026-11-28");
 });
 
