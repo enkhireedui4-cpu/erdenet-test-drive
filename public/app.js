@@ -1,20 +1,32 @@
-import { validateLead, EVENT_SLOTS } from "/lead-validation.js";
+import { validateLead, EVENT_SLOTS, EVENT_DAYS, prizeLabel } from "/lead-validation.js";
 
 const form = document.querySelector("#lead-form");
 const fields = { name: form.elements.name, phone: form.elements.phone };
+const panel = document.querySelector("#registration");
 const submit = document.querySelector("#submit-button");
 const formError = document.querySelector("#form-error");
 const live = document.querySelector("#form-status");
 const result = document.querySelector("#result-panel");
 const retryButton = document.querySelector("#retry-button");
-const OUTBOX_KEY = "sain-erdenet-submitted-v1";
-const RECEIPT_KEY = "sain-erdenet-receipt-v1";
-let busy = false, pollTimer, receipt, submitted, outboxAvailable = true, resultMode = null;
+const spinButton = document.querySelector("#spin-button");
+const prizeCard = document.querySelector("#prize-card");
+const rotor = document.querySelector("#wheel-rotor");
+const slices = [...rotor.querySelectorAll(".wheel-slice")];
+const OUTBOX_KEY = "sain-erdenet-submitted-v2";
+const RECEIPT_KEY = "sain-erdenet-receipt-v2";
+const SPUN_KEY = "sain-erdenet-spun-v2";
+const LEGACY_KEYS = ["sain-erdenet-submitted-v1", "sain-erdenet-receipt-v1"];
+const PRIZE_BODY = "11.29-ний 17:00 цагаас Эрдэнэт шоурумын нээлтэд хүрэлцэн ирж бэлгээ аваарай. Бүртгүүлсэн утасны дугаараа хэлэхэд хангалттай.";
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+let busy = false, pollTimer, receipt, submitted, outboxAvailable = true, resultMode = null, spinning = false;
+let acceptedSlot = { day: "2026-11-28", time: "" }, acceptedPrize = "";
+const chosenTimes = { "2026-11-28": "", "2026-11-29": "17:00" };
+
 const mobileButton = document.querySelector("#mobile-register-button");
 const floatingCta = document.querySelector(".mobile-cta");
 let stickyFrame = 0;
 function updateSticky() {
-  const bounds = document.querySelector("#registration").getBoundingClientRect();
+  const bounds = panel.getBoundingClientRect();
   floatingCta.hidden = !matchMedia("(max-width:760px)").matches || (bounds.top <= innerHeight * .35 && bounds.bottom > 80);
 }
 window.addEventListener("scroll", () => { if (!stickyFrame) stickyFrame = requestAnimationFrame(() => { updateSticky(); stickyFrame = 0; }); }, { passive: true });
@@ -22,14 +34,12 @@ window.addEventListener("resize", updateSticky, { passive: true });
 document.fonts.ready.then(updateSticky);
 updateSticky();
 mobileButton.addEventListener("click", () => {
-  const panel = document.querySelector("#registration"), bounds = panel.getBoundingClientRect();
-  if (!result.hidden || bounds.top > 160 || bounds.bottom < 100) panel.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  const bounds = panel.getBoundingClientRect();
+  if (!result.hidden || bounds.top > 160 || bounds.bottom < 100) panel.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" });
   else form.requestSubmit();
 });
-let acceptedSlot = { day: "2026-11-22", time: "" };
-const chosenTimes = { "2026-11-21": "17:00", "2026-11-22": "" };
 
-function slotLabel(day, time) { return `11-р сарын ${day === "2026-11-21" ? "21" : "22"}${time ? ` · ${time}` : ""}`; }
+function slotLabel(day, time) { const d = EVENT_DAYS[day]; return d ? `${d.date} · ${d.weekday}${time ? ` · ${time}` : ""}` : ""; }
 function timeError(message) { const el = document.querySelector("#time-error"); el.textContent = message || ""; el.hidden = !message; document.querySelector("#time-fieldset").setAttribute("aria-invalid", message ? "true" : "false"); }
 function updateSummary() { const day = form.elements.day.value, time = form.elements.time?.value || ""; document.querySelector("#selected-slot").textContent = time ? slotLabel(day, time) : "Цагаа сонгоно уу"; }
 function renderTimes(day) {
@@ -56,20 +66,89 @@ function loading(value) {
   document.querySelector(".button-loader").hidden = !value;
   if (value) live.textContent = "Хүсэлтийг илгээж байна.";
 }
+
+// The wheel only reveals the prize the server drew; it never decides one.
+function spunPrize() { const spun = readStored(SPUN_KEY); return spun && spun.receipt === receipt && prizeLabel(spun.prize) ? spun.prize : ""; }
+function landingAngle(prizeId, turns = 0, jitter = 0) {
+  // Slices run clockwise from 12 o'clock, 45° each; the pointer is fixed at 0°.
+  const matches = slices.flatMap((slice, i) => slice.dataset.prize === prizeId ? [i] : []);
+  const k = matches[Math.floor(Math.random() * matches.length)];
+  return 360 * turns + (360 - (k * 45 + 22.5)) + jitter;
+}
+function restWheel(prizeId) { rotor.style.transition = "none"; rotor.style.transform = `rotate(${landingAngle(prizeId)}deg)`; }
+function spinTo(prizeId) {
+  return new Promise(resolve => {
+    const target = landingAngle(prizeId, 6, (Math.random() - 0.5) * 30);
+    rotor.style.transition = "none"; rotor.style.transform = "rotate(0deg)";
+    if (reduceMotion()) { rotor.style.transform = `rotate(${target}deg)`; resolve(); return; }
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    rotor.getBoundingClientRect();
+    requestAnimationFrame(() => {
+      rotor.addEventListener("transitionend", finish, { once: true });
+      setTimeout(finish, 5600);
+      rotor.style.transition = "transform 5s cubic-bezier(.12,.6,.1,1)";
+      rotor.style.transform = `rotate(${target}deg)`;
+    });
+  });
+}
+function stageTitle(status, stage) {
+  const base = status === "synced" ? "Та бүртгэгдлээ." : "Хүсэлтийг хүлээн авлаа.";
+  return stage === "spin" ? `${base} Одоо хүрдээ эргүүлээрэй.` : base;
+}
+function showPrize(prizeId, { animate = false } = {}) {
+  const label = prizeLabel(prizeId);
+  panel.dataset.stage = "prize";
+  spinButton.hidden = true;
+  prizeCard.hidden = false;
+  document.querySelector("#result-title").textContent = stageTitle(resultMode, "prize");
+  document.querySelector("#prize-title").textContent = `Таны бэлэг: ${label}`;
+  document.querySelector("#prize-body").textContent = PRIZE_BODY;
+  if (!animate) return;
+  prizeCard.classList.remove("is-revealed"); void prizeCard.offsetWidth; prizeCard.classList.add("is-revealed");
+  prizeCard.focus({ preventScroll: true });
+  live.textContent = `Таны бэлэг: ${label}. ${PRIZE_BODY}`;
+}
+spinButton.addEventListener("click", async () => {
+  if (spinning || !prizeLabel(acceptedPrize)) return;
+  spinning = true; spinButton.disabled = true;
+  live.textContent = "Хүрд эргэж байна.";
+  await spinTo(acceptedPrize);
+  saveStored(SPUN_KEY, { receipt, prize: acceptedPrize });
+  spinning = false;
+  showPrize(acceptedPrize, { animate: true });
+});
+
 function showResult(status, focus = true) {
   resultMode = status;
   mobileButton.textContent = "Бүртгэлийг харах";
   const synced = status === "synced";
   document.querySelector("#form-content").hidden = true; result.hidden = false;
-  requestAnimationFrame(updateSticky);
+  const prize = spunPrize();
+  const stage = prize ? "prize" : "spin";
+  if (!spinning) panel.dataset.stage = stage;
   document.querySelector("#result-symbol").textContent = synced ? "✓" : "…";
-  document.querySelector("#result-title").textContent = synced ? "Та бүртгэгдлээ." : "Хүсэлтийг хүлээн авлаа.";
-  const message = synced ? (acceptedSlot.day === "2026-11-21" ? "Шоурумын нээлтээр Эрдэнэтэд уулзацгаая.\nШаардлагатай мэдээллээр бид тантай холбогдоно." : "Test Drive-аар Эрдэнэтэд уулзацгаая.\nШаардлагатай мэдээллээр бид тантай холбогдоно.") : "Бүртгэлийг баталгаажуулж байна.\nДахин мэдээллээ оруулах шаардлагагүй.";
+  const title = stageTitle(status, spinning ? "spin" : stage);
+  document.querySelector("#result-title").textContent = title;
+  const message = synced ? "" : "Бүртгэлийг баталгаажуулж байна.\nДахин мэдээллээ оруулах шаардлагагүй.";
+  const description = document.querySelector("#result-description");
+  description.textContent = message; description.hidden = !message;
   document.querySelector("#result-slot").textContent = slotLabel(acceptedSlot.day, acceptedSlot.time);
-  document.querySelector("#result-description").textContent = message;
-  retryButton.hidden = synced; live.textContent = `${document.querySelector("#result-title").textContent} ${message}`;
+  retryButton.hidden = synced;
+  if (!spinning) {
+    if (prize) { restWheel(prize); showPrize(prize); }
+    else { spinButton.hidden = false; spinButton.disabled = !prizeLabel(acceptedPrize); prizeCard.hidden = true; }
+  }
+  live.textContent = `${title} ${message}`.trim();
+  requestAnimationFrame(updateSticky);
   if (focus) result.focus({ preventScroll: true });
   if (synced) { clearTimeout(pollTimer); removeStored(OUTBOX_KEY); submitted = null; form.reset(); }
+}
+function acceptResponse(body) {
+  if (!["pending", "synced"].includes(body?.status) || !EVENT_SLOTS[body.day]?.includes(body.time) || !prizeLabel(body.prize)) return false;
+  acceptedSlot = { day: body.day, time: body.time };
+  acceptedPrize = body.prize;
+  return true;
 }
 async function checkStatus(focus = false) {
   if (!receipt) return;
@@ -78,8 +157,7 @@ async function checkStatus(focus = false) {
     const response = await fetch(`/api/leads/${receipt}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
     if (response.ok) {
       const body = await response.json();
-      if ((body.status === "synced" || body.status === "pending") && EVENT_SLOTS[body.day]?.includes(body.time)) {
-        acceptedSlot = { day: body.day, time: body.time };
+      if (acceptResponse(body)) {
         showResult(body.status, focus);
         if (body.status === "pending") pollTimer = setTimeout(() => checkStatus(), 10_000);
         return;
@@ -87,7 +165,9 @@ async function checkStatus(focus = false) {
     }
   } catch { /* The server retains an acknowledged pending lead during a browser outage. */ }
   retryButton.hidden = false;
-  document.querySelector("#result-description").textContent = "Баталгаажуулалтыг түр шалгаж чадсангүй.\nХолболтоо шалгаад дахин оролдоорой.";
+  const description = document.querySelector("#result-description");
+  description.hidden = false;
+  description.textContent = "Баталгаажуулалтыг түр шалгаж чадсангүй.\nХолболтоо шалгаад дахин оролдоорой.";
   pollTimer = setTimeout(() => checkStatus(), 20_000);
 }
 async function send(payload, focus = true) {
@@ -96,13 +176,12 @@ async function send(payload, focus = true) {
   try {
     const response = await fetch("/api/leads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(20_000), cache: "no-store" });
     const body = await response.json();
-    if (!response.ok || !["pending", "synced"].includes(body.status) || !/^[A-Za-z0-9_-]{32}$/.test(body.receipt) || !EVENT_SLOTS[body.day]?.includes(body.time)) {
+    if (!response.ok || !/^[A-Za-z0-9_-]{32}$/.test(body.receipt) || !acceptResponse(body)) {
       if (body.errors) for (const name of Object.keys(fields)) fieldError(name, body.errors[name]);
       throw new Error(response.status === 429 ? "Түр хүлээгээд дахин оролдоно уу." : "Хүсэлтийг баталгаажуулж чадсангүй. Дахин оролдоорой.");
     }
     receipt = body.receipt;
-    acceptedSlot = { day: body.day, time: body.time };
-    saveStored(RECEIPT_KEY, { receipt, ...acceptedSlot, expires: Date.now() + 7 * 86400_000 });
+    saveStored(RECEIPT_KEY, { receipt, ...acceptedSlot, prize: acceptedPrize, expires: Date.now() + 14 * 86400_000 });
     removeStored(OUTBOX_KEY); submitted = null;
     showResult(body.status, focus);
     if (body.status === "pending") pollTimer = setTimeout(() => checkStatus(), 5000);
@@ -129,17 +208,20 @@ form.addEventListener("submit", event => {
   outboxAvailable = saveStored(OUTBOX_KEY, submitted);
   void send(input);
 });
-for (const [name, field] of Object.entries(fields)) field.addEventListener(name === "consent" ? "change" : "input", () => fieldError(name, ""));
+for (const [name, field] of Object.entries(fields)) field.addEventListener("input", () => fieldError(name, ""));
 retryButton.addEventListener("click", () => { retryButton.disabled = true; void checkStatus(true).finally(() => { retryButton.disabled = false; }); });
 window.addEventListener("online", () => { if (receipt) void checkStatus(); else if (submitted && !busy) void send(submitted, false); });
 window.addEventListener("pagehide", () => clearTimeout(pollTimer));
 window.addEventListener("pageshow", event => { if (event.persisted && receipt) void checkStatus(); });
 
+// Data from the earlier MEGA TEST DRIVE page (other dates) never carries over.
+LEGACY_KEYS.forEach(removeStored);
 const savedReceipt = readStored(RECEIPT_KEY);
 const savedSubmission = readStored(OUTBOX_KEY);
 if (savedReceipt && savedReceipt.expires > Date.now() && /^[A-Za-z0-9_-]{32}$/.test(savedReceipt.receipt)) {
   receipt = savedReceipt.receipt;
   if (EVENT_SLOTS[savedReceipt.day]?.includes(savedReceipt.time)) acceptedSlot = { day: savedReceipt.day, time: savedReceipt.time };
+  if (prizeLabel(savedReceipt.prize)) acceptedPrize = savedReceipt.prize;
   showResult("pending", false);
   void checkStatus();
 } else if (savedSubmission?.expires > Date.now() && validateLead(savedSubmission).ok) {
@@ -149,4 +231,4 @@ if (savedReceipt && savedReceipt.expires > Date.now() && /^[A-Za-z0-9_-]{32}$/.t
   fields.name.value = submitted.name; fields.phone.value = submitted.phone;
   if (navigator.onLine) void send(submitted, false);
   else error("Илгээж байсан хүсэлт байна. Холболт сэргэхэд дахин илгээнэ.");
-} else { removeStored(OUTBOX_KEY); removeStored(RECEIPT_KEY); }
+} else { removeStored(OUTBOX_KEY); removeStored(RECEIPT_KEY); removeStored(SPUN_KEY); }
