@@ -4,8 +4,10 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { randomUUID } from "node:crypto";
 
-function receiver(initialMaxRows = 1000) {
-  const rows = [["Бүртгэлийн ID", "Бүртгэсэн огноо", "Нэр", "Утас", "Эвент", "Өдөр", "Цаг", "Эх сурвалж", "UTM source", "UTM campaign", "Зөвшөөрөл"]];
+const LEGACY_HEADERS = ["Бүртгэлийн ID", "Бүртгэсэн огноо", "Нэр", "Утас", "Эвент", "Өдөр", "Цаг", "Эх сурвалж", "UTM source", "UTM campaign", "Зөвшөөрөл"];
+
+function receiver(initialMaxRows = 1000, { legacyHeaders = false } = {}) {
+  const rows = [legacyHeaders ? [...LEGACY_HEADERS] : [...LEGACY_HEADERS, "Бэлэг"]];
   let locked = false, failWrite = false, maxRows = initialMaxRows;
   const sheet = {
     getLastRow: () => rows.length,
@@ -28,7 +30,7 @@ function receiver(initialMaxRows = 1000) {
   return { rows, post(data) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(data) } }).text); }, set failWrite(value) { failWrite = value; } };
 }
 
-const data = () => ({ id: randomUUID(), secret: "test-secret", name: "Synthetic verification", phone: "+97600000000", event: "erdenet-2026-11", day: "2026-11-22", time: "10:00", consent: true, consentVersion: "erdenet-test-drive-v1", createdAt: new Date().toISOString(), consentAt: new Date().toISOString(), source: "erdenet-web" });
+const data = () => ({ id: randomUUID(), secret: "test-secret", name: "Synthetic verification", phone: "+97600000000", event: "erdenet-opening-2026-11", day: "2026-11-28", time: "10:00", consent: true, consentVersion: "erdenet-opening-v1", prize: "umbrella", createdAt: new Date().toISOString(), consentAt: new Date().toISOString(), source: "erdenet-web" });
 
 test("receiver authenticates writes, deduplicates retries and safely stores literal cell text", () => {
   const f = receiver();
@@ -73,13 +75,28 @@ test("receiver refuses to acknowledge a reused ID with different contact data", 
 
 test("receiver stores the chosen day and allows one registration per phone on each day", () => {
   const f = receiver();
-  assert.equal(f.post({ ...data(), day: "2026-11-21", time: "17:00" }).ok, true);
-  assert.equal(f.post({ ...data(), day: "2026-11-22" }).ok, true);
+  assert.equal(f.post({ ...data(), day: "2026-11-29", time: "17:00" }).ok, true);
+  assert.equal(f.post({ ...data(), day: "2026-11-28" }).ok, true);
   assert.equal(f.rows.length, 3);
-  assert.equal(f.rows[1][5], "'2026-11-21");
-  assert.equal(f.rows[2][5], "'2026-11-22");
+  assert.equal(f.rows[1][5], "'2026-11-29");
+  assert.equal(f.rows[2][5], "'2026-11-28");
   assert.equal(f.rows[1][6], "'17:00");
   assert.equal(f.rows[2][6], "'10:00");
-  assert.equal(f.post({ ...data(), day: "2026-11-21", time: "10:00" }).ok, false);
-  assert.equal(f.post({ ...data(), day: "2026-11-23" }).ok, false);
+  assert.equal(f.post({ ...data(), day: "2026-11-29", time: "10:00" }).ok, false);
+  assert.equal(f.post({ ...data(), day: "2026-11-30" }).ok, false);
+});
+
+test("receiver upgrades a legacy 11-column header row and stores the prize label", () => {
+  const r = receiver(1000, { legacyHeaders: true });
+  assert.equal(r.post(data()).ok, true);
+  assert.equal(r.rows[0][11], "Бэлэг");
+  assert.equal(r.rows[1][11], "'Борооны шүхэр");
+});
+
+test("receiver rejects an unknown prize and old-event payloads", () => {
+  const r = receiver();
+  assert.equal(r.post({ ...data(), prize: "car" }).ok, false);
+  assert.equal(r.post({ ...data(), event: "erdenet-2026-11" }).ok, false);
+  assert.equal(r.post({ ...data(), day: "2026-11-22" }).ok, false);
+  assert.equal(r.rows.length, 1);
 });

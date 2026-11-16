@@ -3,8 +3,10 @@
 var ERDENET_SHEET_ID = '1argV8PktHaKNvW5_iK0UICcwOkHGDJtEq__PwSOGs2k';
 var ERDENET_TAB = 'Sheet1';
 var ERDENET_SECRET = '__WEBHOOK_SECRET__';
-var ERDENET_EVENT = 'erdenet-2026-11';
-var ERDENET_HEADERS = ['Бүртгэлийн ID', 'Бүртгэсэн огноо', 'Нэр', 'Утас', 'Эвент', 'Өдөр', 'Цаг', 'Эх сурвалж', 'UTM source', 'UTM campaign', 'Зөвшөөрөл'];
+var ERDENET_EVENT = 'erdenet-opening-2026-11';
+var ERDENET_HEADERS = ['Бүртгэлийн ID', 'Бүртгэсэн огноо', 'Нэр', 'Утас', 'Эвент', 'Өдөр', 'Цаг', 'Эх сурвалж', 'UTM source', 'UTM campaign', 'Зөвшөөрөл', 'Бэлэг'];
+// Mirrors PRIZES in public/lead-validation.js; the Sheet shows the label.
+var ERDENET_PRIZES = { umbrella: 'Борооны шүхэр', usb: 'USB багц', notebook: 'Тэмдэглэлийн дэвтэр', gift: 'Гарын бэлэг' };
 
 function jsonOutput(value) {
   return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
@@ -21,11 +23,12 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     if (!data || data.secret !== ERDENET_SECRET || ERDENET_SECRET.indexOf('__') === 0) return jsonOutput({ ok: false });
     var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (typeof data.id !== 'string' || !uuid.test(data.id) || data.event !== ERDENET_EVENT || data.consent !== true || data.consentVersion !== 'erdenet-test-drive-v1') return jsonOutput({ ok: false });
+    if (typeof data.id !== 'string' || !uuid.test(data.id) || data.event !== ERDENET_EVENT || data.consent !== true || data.consentVersion !== 'erdenet-opening-v1') return jsonOutput({ ok: false });
     if (typeof data.name !== 'string' || data.name.trim().length < 2 || data.name.length > 80 || /[\u0000-\u001f\u007f]/.test(data.name)) return jsonOutput({ ok: false });
     if (typeof data.phone !== 'string' || !/^\+976\d{8}$/.test(data.phone)) return jsonOutput({ ok: false });
-    var slots = { '2026-11-21': ['17:00'], '2026-11-22': ['10:00', '12:00', '14:00', '16:00', '18:00'] };
+    var slots = { '2026-11-28': ['10:00', '12:00', '14:00', '16:00', '18:00'], '2026-11-29': ['17:00'] };
     if (!Object.prototype.hasOwnProperty.call(slots, data.day) || slots[data.day].indexOf(data.time) < 0) return jsonOutput({ ok: false });
+    if (typeof data.prize !== 'string' || !Object.prototype.hasOwnProperty.call(ERDENET_PRIZES, data.prize)) return jsonOutput({ ok: false });
     if (!Number.isFinite(Date.parse(data.createdAt)) || !Number.isFinite(Date.parse(data.consentAt))) return jsonOutput({ ok: false });
     lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) return jsonOutput({ ok: false });
@@ -33,6 +36,13 @@ function doPost(e) {
     if (!sheet) return jsonOutput({ ok: false });
     if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, ERDENET_HEADERS.length).setValues([ERDENET_HEADERS]);
     var headers = sheet.getRange(1, 1, 1, ERDENET_HEADERS.length).getValues()[0];
+    // A sheet prepared for the earlier event has 11 headers: add the prize column once.
+    var last = ERDENET_HEADERS.length - 1;
+    var legacy = headers.slice(0, last).every(function(value, index) { return value === ERDENET_HEADERS[index]; }) && String(headers[last] || '') === '';
+    if (legacy) {
+      sheet.getRange(1, 1, 1, ERDENET_HEADERS.length).setValues([ERDENET_HEADERS]);
+      headers = ERDENET_HEADERS.slice();
+    }
     if (headers.some(function(value, index) { return value !== ERDENET_HEADERS[index]; })) return jsonOutput({ ok: false });
     var lastRow = sheet.getLastRow();
     if (lastRow > 1) {
@@ -52,7 +62,7 @@ function doPost(e) {
     }
     var createdAt = Utilities.formatDate(new Date(data.createdAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
     var consentAt = Utilities.formatDate(new Date(data.consentAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
-    var values = [data.id, createdAt, data.name.trim(), data.phone, ERDENET_EVENT, data.day, data.time, 'erdenet-web', data.utmSource || '', data.utmCampaign || '', consentAt + ' / ' + data.consentVersion];
+    var values = [data.id, createdAt, data.name.trim(), data.phone, ERDENET_EVENT, data.day, data.time, 'erdenet-web', data.utmSource || '', data.utmCampaign || '', consentAt + ' / ' + data.consentVersion, ERDENET_PRIZES[data.prize]];
     if (lastRow + 1 > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1000);
     sheet.getRange(lastRow + 1, 1, 1, values.length).setNumberFormat('@').setValues([values.map(literalText)]);
     SpreadsheetApp.flush();
