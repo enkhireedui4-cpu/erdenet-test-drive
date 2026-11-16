@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="mn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090909">
+  <meta name="description" content="Сайн Моторс Эрдэнэт. 11-р сарын 21-нд шоурумын нээлт, 22-нд MEGA TEST DRIVE. 11 брэндийн 20 гаруй загвартай танилцаж, өөрөө жолоодоорой.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Эрдэнэт MEGA TEST DRIVE — Сайн Моторс</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/assets/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/zona-bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <a class="skip-link" href="#registration">Бүртгэл рүү очих</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#" aria-label="Сайн Моторс — нүүр">
+        <span class="brand-caption">Албан ёсны дистрибьютер</span>
+        <img src="/assets/logo.svg" alt="Sain Motors" width="120" height="42" fetchpriority="high">
+      </a>
+      <div class="header-actions"><a class="header-phone" href="tel:+97699096347" aria-label="9909-6347 дугаарт залгах">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="m5.8 3 3 4.7-2.2 2.2a16 16 0 0 0 7.5 7.5l2.2-2.2 4.7 3c-.2 2.3-1.6 3.3-3.7 2.8C9.8 19.2 4.8 14.2 3 6.7 2.5 4.6 3.5 3.2 5.8 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        <span>9909-6347</span>
+      </a><a class="header-register" href="#registration">Бүртгүүлэх</a></div>
+    </div>
+  </header>
+
+  <main id="main" class="container">
+    <div class="lead-layout">
+      <section class="event-intro" aria-labelledby="event-title">
+        <div class="event-mark" aria-label="Mega Test Drive, Эрдэнэт">
+          <span class="event-mark-top">MEGA</span>
+          <span class="event-mark-bottom">TEST DRIVE</span>
+          <span class="event-mark-city">Эрдэнэт хот</span>
+        </div>
+        <h1 id="event-title">11 брэнд. 20+ загвар.<br>Таны сонголт — Эрдэнэтэд.</h1>
+        <p class="event-description">Шинэ автомашинуудтай нэг дор танилцаж,<br class="desktop-break"> өөрийн биеэр жолоодож туршаарай.</p>
+
+        <dl class="event-facts">
+          <div><dt>Огноо</dt><dd>2026.11.21–22</dd></div>
+          <div><dt>Шоурумын нээлт</dt><dd>11.21 <span class="fact-divider">/</span> 17:00</dd></div>
+          <div><dt>Test Drive</dt><dd>11.22 <span class="fact-divider">/</span> Өдрийн турш</dd></div>
+          <div><dt>Хот</dt><dd>Эрдэнэт</dd></div>
+        </dl>
+      </section>
+
+      <section class="registration-panel" id="registration" aria-labelledby="registration-title" tabindex="-1">
+        <div id="form-content">
+          <h2 id="registration-title">Test Drive-д бүртгүүлэх</h2>
+          <p class="panel-description">Бүртгэл нэг минут хүрэхгүй.</p>
+          <form id="lead-form" novalidate>
+            <fieldset class="choice-fieldset" id="day-fieldset"><legend>Ирэх өдөр</legend><div class="day-choices">
+              <label class="choice-label"><input class="choice-radio" type="radio" name="day" value="2026-11-21" id="day-21"><span class="day-card"><strong>11.21</strong><small>Бямба</small></span></label>
+              <label class="choice-label"><input class="choice-radio" type="radio" name="day" value="2026-11-22" id="day-22" checked><span class="day-card"><strong>11.22</strong><small>Ням</small></span></label>
+            </div></fieldset>
+            <fieldset class="choice-fieldset time-fieldset" id="time-fieldset" aria-describedby="time-error"><legend>Ирэх цаг</legend><div class="time-choices" id="time-choices">
+              <label class="choice-label"><input class="choice-radio" type="radio" name="time" value="10:00"><span class="time-card">10:00</span></label>
+              <label class="choice-label"><input class="choice-radio" type="radio" name="time" value="12:00"><span class="time-card">12:00</span></label>
+              <label class="choice-label"><input class="choice-radio" type="radio" name="time" value="14:00"><span class="time-card">14:00</span></label>
+              <label class="choice-label"><input class="choice-radio" type="radio" name="time" value="16:00"><span class="time-card">16:00</span></label>
+              <label class="choice-label"><input class="choice-radio" type="radio" name="time" value="18:00"><span class="time-card">18:00</span></label>
+            </div><p class="field-error" id="time-error" hidden></p></fieldset>
+            <div class="field">
+              <label for="name">Таны нэр</label>
+              <input id="name" name="name" autocomplete="given-name" maxlength="80" placeholder="Нэрээ оруулна уу" required aria-describedby="name-error">
+              <p class="field-error" id="name-error" hidden></p>
+            </div>
+            <div class="field">
+              <label for="phone">Утасны дугаар</label>
+              <div class="phone-input"><span aria-hidden="true">+976</span><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" maxlength="24" placeholder="9911 2233" required aria-label="Утасны дугаар" aria-describedby="phone-error"></div>
+              <p class="field-error" id="phone-error" hidden></p>
+            </div>
+            <div class="honeypot" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+            <div class="registration-summary"><span>Таны сонголт</span><strong id="selected-slot">Цагаа сонгоно уу</strong></div>
+            <p id="form-error" class="form-error" role="alert" hidden></p>
+            <button class="primary-button" type="submit" id="submit-button"><span id="submit-label">Бүртгүүлэх</span><span class="button-loader" aria-hidden="true" hidden></span></button>
+            <p class="privacy-note">Бүртгүүлэх товчийг дарснаар Сайн Моторс тантай<br>энэ эвентийн талаар холбогдохыг зөвшөөрнө.</p>
+          </form>
+        </div>
+        <div class="result-panel" id="result-panel" hidden tabindex="-1">
+          <span class="result-symbol" id="result-symbol" aria-hidden="true">✓</span>
+          <h2 id="result-title">Та бүртгэгдлээ.</h2>
+          <p id="result-description"></p>
+          <div class="result-details"><span>MEGA TEST DRIVE · ЭРДЭНЭТ</span><strong id="result-slot">11-р сарын 22</strong></div>
+          <a class="secondary-button" href="tel:+97699096347">9909-6347 · Холбогдох</a>
+          <button class="text-button" id="retry-button" type="button" hidden>Баталгаажсан эсэхийг шалгах</button>
+        </div>
+        <p class="sr-only" id="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      </section>
+    </div>
+
+    <div class="details-layout">
+      <section class="program-section" aria-labelledby="program-title">
+        <h2 id="program-title">Таныг юу хүлээж байна вэ?</h2>
+        <ol class="program-list">
+          <li><span class="program-number" aria-hidden="true">01</span><div><h3>Өөрөө жолоодож, мэдэр</h3><p>Седан, SUV, pickup, offroad. Бензин, дизель, цахилгаан, хосолсон хөдөлгүүртэй 20 гаруй загвар.</p></div></li>
+          <li><span class="program-number" aria-hidden="true">02</span><div><h3>Шинэ шоурумын нээлт</h3><p>11-р сарын 21-ний 17:00 цагаас. Урлагийн номер, катеринг, хөгжөөнт тэмцээнтэй.</p></div></li>
+          <li><span class="program-number" aria-hidden="true">03</span><div><h3>Урамшуулал, бэлэг</h3><p>10 азтанд 500,000₮ хүртэлх бензиний талон. Азын хүрд болон бүртгэлийн урамшууллууд.</p></div></li>
+        </ol>
+      </section>
+      <section class="location-section" aria-labelledby="location-title">
+        <h2 id="location-title">Эрдэнэт шоурум</h2>
+        <p class="location-name">Sain Motors Эрдэнэт</p>
+        <p class="location-address">Alpha Arena Sportainment Center</p>
+        <dl class="location-facts"><div><dt>Нээлт</dt><dd>11.21 · 17:00</dd></div><div><dt>Холбоо барих</dt><dd><a href="tel:+97699096347">9909-6347</a></dd></div></dl>
+        <div class="location-actions"><a class="secondary-button" href="https://www.google.com/maps/search/?api=1&amp;query=Alpha%20Arena%20Sportainment%20Center%20Erdenet" target="_blank" rel="noopener noreferrer">Газрын зураг</a><a class="secondary-button" href="tel:+97699096347">Залгах</a></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer"><div class="container footer-inner"><img src="/assets/logo.svg" alt="Сайн Моторс" width="88" height="32" loading="lazy"><p>© 2026 Сайн Моторс</p><span>11 брэндийн албан ёсны дистрибьютер</span></div></footer>
+  <div class="mobile-cta"><button type="button" id="mobile-register-button">Бүртгүүлэх</button></div>
+  <noscript><p class="noscript-note">Онлайнаар бүртгүүлэхийн тулд JavaScript-ээ идэвхжүүлнэ үү. Эсвэл <a href="tel:+97699096347">9909-6347</a> дугаарт холбогдоорой.</p></noscript>
+</body>
+</html>

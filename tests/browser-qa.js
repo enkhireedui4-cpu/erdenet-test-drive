@@ -1,0 +1,80 @@
+async (page) => {
+  const base = "http://localhost:3210/";
+  const root = "C:/Users/user/OneDrive/Desktop/erdenet-test-drive/test-results/";
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  const reports = [];
+  const errors = [];
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(base, { waitUntil: "networkidle" });
+  await page.evaluate(() => { localStorage.removeItem("sain-erdenet-submitted-v1"); localStorage.removeItem("sain-erdenet-receipt-v1"); });
+  let mode = "failure", status = "pending", selectedDay = "2026-11-21", selectedTime = "17:00";
+  const ids = [];
+  await page.route("**/api/leads", async route => {
+    const payload = route.request().postDataJSON(); ids.push(payload.requestId); selectedDay = payload.day; selectedTime = payload.time;
+    if (mode === "failure") return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Unavailable" }) });
+    return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ status: "pending", receipt: "a".repeat(32), day: payload.day, time: payload.time }) });
+  });
+  await page.route("**/api/leads/*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ status, day: selectedDay, time: selectedTime }) }));
+  await page.reload({ waitUntil: "networkidle" });
+  const button = page.locator("#submit-button");
+  await button.click();
+  check(await page.locator("[aria-invalid=true]").count() === 3, "Empty input must identify time, name and phone");
+  check(await page.evaluate(() => document.activeElement.name === "time"), "Focus must move to the first missing time option");
+  await page.getByText("11.21", { exact: true }).click();
+  check(await page.locator('[name="time"]').count() === 1 && await page.locator('[name="time"]').inputValue() === "17:00", "Opening day must have only 17:00");
+  check(await page.locator('[name="time"]:checked').count() === 1, "The only opening slot is preselected");
+  await page.getByText("11.22", { exact: true }).click();
+  check(await page.locator('[name="time"]').count() === 5, "Test-drive day must have five slots");
+  await page.getByText("16:00", { exact: true }).click();
+  check((await page.locator("#selected-slot").textContent()).includes("16:00"), "Chosen time must appear in summary");
+  await page.getByText("11.21", { exact: true }).click();
+  await page.getByLabel("Таны нэр", { exact: true }).fill("Synthetic browser verification");
+  await page.getByRole("textbox", { name: "Утасны дугаар", exact: true }).fill("00000000");
+  await page.locator("#phone").press("Tab");
+  check(await page.locator("#submit-button").evaluate(el => document.activeElement === el), "Keyboard must reach submit without honeypot focus");
+  check(await page.locator('input[type="checkbox"]').count() === 0, "Contact permission must not require a checkbox");
+  await button.click();
+  await page.locator("#form-error").waitFor({ state: "visible" });
+  check(await page.locator("#name").inputValue() === "Synthetic browser verification", "Server failure must preserve contact input");
+  check(await button.isEnabled(), "Server failure must allow retry");
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("sain-erdenet-submitted-v1")));
+  check(stored?.consent === true && stored.requestId === ids[0], "Consented request ID must be stored before POST");
+  reports.push("empty validation, keyboard order, failure preserves fields and submitted ID");
+
+  mode = "pending";
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("#result-panel").waitFor({ state: "visible" });
+  check(ids.length === 2 && ids[0] === ids[1], "Reload must retry the original request ID");
+  check((await page.locator("#result-title").textContent()).includes("хүлээн авлаа"), "Durable pending must not say registered");
+  check(await page.evaluate(() => localStorage.getItem("sain-erdenet-submitted-v1")) === null, "Server receipt must clear contact data from browser outbox");
+  status = "synced";
+  await page.locator("#retry-button").click();
+  await page.getByRole("heading", { name: "Та бүртгэгдлээ." }).waitFor();
+  check((await page.locator("#result-slot").textContent()).includes("21 · 17:00"), "Confirmation must preserve the actual day and time");
+  reports.push("reload retries same ID, pending differs from completed, checked acknowledgement confirms");
+
+  await page.evaluate(() => { localStorage.removeItem("sain-erdenet-submitted-v1"); localStorage.removeItem("sain-erdenet-receipt-v1"); });
+  await page.unroute("**/api/leads"); await page.unroute("**/api/leads/*");
+  await page.reload({ waitUntil: "networkidle" });
+  await page.evaluate(() => document.fonts.ready);
+  for (const [width, height, name] of [[1440, 1000, "desktop"], [390, 844, "mobile-390"], [320, 740, "mobile-320"]]) {
+    await page.setViewportSize({ width, height });
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Overflow at ${width}px`);
+    await page.screenshot({ path: `${root}${name}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => scrollTo(0, 0));
+  const sticky = page.locator("#mobile-register-button");
+  check(await sticky.isVisible(), "Red registration button must be visible on mobile from page entry");
+  const color = await sticky.evaluate(el => getComputedStyle(el).backgroundColor);
+  check(color === "rgb(226, 10, 23)", "Bottom CTA must use Sain Motors red");
+  await sticky.click();
+  await page.waitForFunction(() => document.querySelector("#registration").getBoundingClientRect().top < 160);
+  check(await page.evaluate(() => document.querySelector("#registration").getBoundingClientRect().top < 160), "First sticky CTA click must scroll to registration");
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  check(await sticky.isHidden(), "Floating CTA must hide at the form so it cannot cover inputs");
+  check(errors.length === 0, `Browser runtime errors: ${errors.join(", ")}`);
+  reports.push("desktop, 390px, 320px: no horizontal overflow; zero runtime errors");
+  return { passed: reports, googleWrites: "Mocked for UI QA only; actual Google receiver not configured." };
+}
