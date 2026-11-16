@@ -4,12 +4,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { normalizePhone, validateLead, EVENT_ID } from "../public/lead-validation.js";
+import { normalizePhone, validateLead, EVENT_ID, PRIZES, prizeLabel } from "../public/lead-validation.js";
 import { createLeadStore } from "../lib/lead-store.mjs";
 import { createSheetSync } from "../lib/sheet-sync.mjs";
 
 const input = (overrides = {}) => ({
-  requestId: randomUUID(), name: "Тест хэрэглэгч", phone: "00000000", day: "2026-11-22", time: "10:00", consent: true, website: "", ...overrides,
+  requestId: randomUUID(), name: "Тест хэрэглэгч", phone: "00000000", day: "2026-11-28", time: "10:00", consent: true, website: "", ...overrides,
 });
 
 function fixture(t) {
@@ -35,7 +35,7 @@ test("requires explicit consent, a real name, an idempotency UUID and an empty h
   assert.equal(validated.data.name, "Өлзий Бат");
   assert.equal(validated.data.phone, "+97699112233");
   assert.equal(validated.data.event, EVENT_ID);
-  assert.equal(validated.data.day, "2026-11-22");
+  assert.equal(validated.data.day, "2026-11-28");
   for (const patch of [{ consent: false }, { consent: "true" }, { name: " " }, { name: "а".repeat(81) }, { name: "A\u0000B" }, { requestId: "id" }, { website: "spam.example" }]) {
     assert.equal(validateLead(input(patch)).ok, false, JSON.stringify(patch));
   }
@@ -43,20 +43,28 @@ test("requires explicit consent, a real name, an idempotency UUID and an empty h
 
 test("preserves either selected event day and rejects an unoffered date", (t) => {
   const { store } = fixture(t);
-  const opening = validateLead(input({ day: "2026-11-21", time: "17:00" }));
-  const testDrive = validateLead(input({ day: "2026-11-22" }));
-  assert.equal(opening.data.day, "2026-11-21");
-  assert.equal(testDrive.data.day, "2026-11-22");
-  assert.equal(validateLead(input({ day: "2026-11-23" })).ok, false);
+  const testDrive = validateLead(input());
+  const opening = validateLead(input({ day: "2026-11-29", time: "17:00" }));
+  assert.equal(testDrive.data.day, "2026-11-28");
+  assert.equal(opening.data.day, "2026-11-29");
+  for (const day of ["2026-11-21", "2026-11-22", "2026-11-30"]) assert.equal(validateLead(input({ day })).ok, false);
   assert.notEqual(store.accept(opening.data).id, store.accept(testDrive.data).id);
   assert.equal(store.pending().length, 2);
 });
 
 test("only offers 17:00 on opening day and five two-hour options on test-drive day", () => {
-  assert.equal(validateLead(input({ day: "2026-11-21", time: "17:00" })).ok, true);
-  assert.equal(validateLead(input({ day: "2026-11-21", time: "10:00" })).ok, false);
+  assert.equal(validateLead(input({ day: "2026-11-29", time: "17:00" })).ok, true);
+  assert.equal(validateLead(input({ day: "2026-11-29", time: "10:00" })).ok, false);
   for (const time of ["10:00", "12:00", "14:00", "16:00", "18:00"]) assert.equal(validateLead(input({ time })).ok, true);
   for (const time of ["", "17:00", "20:00", "bad"]) assert.equal(validateLead(input({ time })).ok, false);
+});
+
+test("exposes the four wheel prizes with Mongolian labels", () => {
+  assert.deepEqual(PRIZES.map(p => p.id), ["umbrella", "usb", "notebook", "gift"]);
+  assert.equal(prizeLabel("usb"), "USB багц");
+  assert.equal(prizeLabel("car"), undefined);
+  assert.equal(EVENT_ID, "erdenet-opening-2026-11");
+  assert.ok(Object.isFrozen(PRIZES));
 });
 
 test("committed pending records and receipt tokens survive a process restart", (t) => {

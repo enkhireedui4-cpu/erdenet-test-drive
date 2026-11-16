@@ -17,7 +17,7 @@ async function fixture(t, overrides = {}) {
   return { ...app, origin, post };
 }
 
-const valid = () => ({ requestId: randomUUID(), name: "Synthetic verification", phone: "00000000", day: "2026-11-22", time: "10:00", consent: true, website: "" });
+const valid = () => ({ requestId: randomUUID(), name: "Synthetic verification", phone: "00000000", day: "2026-11-28", time: "10:00", consent: true, website: "" });
 
 test("intake returns pending only after durable storage; status exposes no personal data", async (t) => {
   const f = await fixture(t);
@@ -30,7 +30,7 @@ test("intake returns pending only after durable storage; status exposes no perso
   const status = await fetch(`${f.origin}/api/leads/${body.receipt}`).then(r => r.json());
   assert.equal(status.status, "pending");
   assert.deepEqual(Object.keys(status).sort(), ["day", "status", "time"]);
-  assert.equal(status.day, "2026-11-22");
+  assert.equal(status.day, "2026-11-28");
 });
 
 test("distinct attendees sharing a proxy or event Wi-Fi are not blocked by an IP quota", async (t) => {

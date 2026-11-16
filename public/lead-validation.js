@@ -1,6 +1,18 @@
-export const EVENT_ID = "erdenet-2026-11";
-export const EVENT_SLOTS = Object.freeze({ "2026-11-21": Object.freeze(["17:00"]), "2026-11-22": Object.freeze(["10:00", "12:00", "14:00", "16:00", "18:00"]) });
-export const CONSENT_VERSION = "erdenet-test-drive-v1";
+export const EVENT_ID = "erdenet-opening-2026-11";
+export const EVENT_SLOTS = Object.freeze({ "2026-11-28": Object.freeze(["10:00", "12:00", "14:00", "16:00", "18:00"]), "2026-11-29": Object.freeze(["17:00"]) });
+export const EVENT_DAYS = Object.freeze({
+  "2026-11-28": Object.freeze({ date: "11.28", weekday: "Бямба", title: "Тест драйв өдөрлөг" }),
+  "2026-11-29": Object.freeze({ date: "11.29", weekday: "Ням", title: "Нээлтийн үйл ажиллагаа" }),
+});
+export const CONSENT_VERSION = "erdenet-opening-v1";
+// The server draws the prize; the browser only reveals it on the wheel.
+export const PRIZES = Object.freeze([
+  Object.freeze({ id: "umbrella", label: "Борооны шүхэр", short: "Шүхэр" }),
+  Object.freeze({ id: "usb", label: "USB багц", short: "USB багц" }),
+  Object.freeze({ id: "notebook", label: "Тэмдэглэлийн дэвтэр", short: "Дэвтэр" }),
+  Object.freeze({ id: "gift", label: "Гарын бэлэг", short: "Гарын бэлэг" }),
+]);
+export const prizeLabel = id => PRIZES.find(prize => prize.id === id)?.label;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function normalizePhone(value) {
