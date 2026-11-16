@@ -71,3 +71,13 @@ test("static routing cannot expose private files, source, config, database or tr
     assert.equal(response.status, 404, pathname);
   }
 });
+
+test("serves the Erdenet showroom logo and the opening page copy", async (t) => {
+  const f = await fixture(t);
+  const logo = await fetch(`${f.origin}/assets/erdenet-showroom.jpg`);
+  assert.equal(logo.status, 200);
+  assert.equal(logo.headers.get("content-type"), "image/jpeg");
+  const page = await fetch(`${f.origin}/`).then(r => r.text());
+  assert.ok(page.includes("Сайн Моторс Эрдэнэт салбарын нээлт"));
+  assert.ok(!page.includes("MEGA"));
+});

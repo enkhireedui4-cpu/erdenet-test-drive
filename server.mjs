@@ -13,6 +13,7 @@ const files = new Map([
   ["/lead-validation.js", ["lead-validation.js", "text/javascript; charset=utf-8"]],
   ["/assets/logo.svg", ["assets/logo.svg", "image/svg+xml"]], ["/assets/inter.woff2", ["assets/inter.woff2", "font/woff2"]],
   ["/assets/zona-bold.woff2", ["assets/zona-bold.woff2", "font/woff2"]], ["/assets/zona-semibold.woff2", ["assets/zona-semibold.woff2", "font/woff2"]],
+  ["/assets/erdenet-showroom.jpg", ["assets/erdenet-showroom.jpg", "image/jpeg"]],
   ["/favicon.svg", ["assets/logo.svg", "image/svg+xml"]],
 ]);
 
