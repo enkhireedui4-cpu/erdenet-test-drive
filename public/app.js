@@ -163,6 +163,8 @@ async function checkStatus(focus = false) {
     if (response.ok) {
       const body = await response.json();
       if (acceptResponse(body)) {
+        const saved = readStored(RECEIPT_KEY);
+        if (saved?.receipt === receipt) saveStored(RECEIPT_KEY, { ...saved, ...acceptedSlot, prize: acceptedPrize, status: body.status });
         showResult(body.status, focus);
         if (body.status === "pending") pollTimer = setTimeout(() => checkStatus(), 10_000);
         return;
@@ -186,7 +188,7 @@ async function send(payload, focus = true) {
       throw new Error(response.status === 429 ? "Түр хүлээгээд дахин оролдоно уу." : "Хүсэлтийг баталгаажуулж чадсангүй. Дахин оролдоорой.");
     }
     receipt = body.receipt;
-    saveStored(RECEIPT_KEY, { receipt, ...acceptedSlot, prize: acceptedPrize, expires: Date.now() + 14 * 86400_000 });
+    saveStored(RECEIPT_KEY, { receipt, ...acceptedSlot, prize: acceptedPrize, status: body.status, expires: Date.now() + 14 * 86400_000 });
     removeStored(OUTBOX_KEY); submitted = null;
     showResult(body.status, focus);
     if (body.status === "pending") pollTimer = setTimeout(() => checkStatus(), 5000);
@@ -227,8 +229,9 @@ if (savedReceipt && savedReceipt.expires > Date.now() && /^[A-Za-z0-9_-]{32}$/.t
   receipt = savedReceipt.receipt;
   if (EVENT_SLOTS[savedReceipt.day]?.includes(savedReceipt.time)) acceptedSlot = { day: savedReceipt.day, time: savedReceipt.time };
   if (prizeLabel(savedReceipt.prize)) acceptedPrize = savedReceipt.prize;
-  showResult("pending", false);
-  void checkStatus();
+  // A confirmed registration is final; only a pending one keeps asking the server.
+  if (savedReceipt.status === "synced") showResult("synced", false);
+  else { showResult("pending", false); void checkStatus(); }
 } else if (savedSubmission?.expires > Date.now() && validateLead(savedSubmission).ok) {
   submitted = savedSubmission;
   form.querySelector(`[name="day"][value="${submitted.day}"]`).checked = true;

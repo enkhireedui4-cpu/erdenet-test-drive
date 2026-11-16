@@ -45,8 +45,12 @@ function doPost(e) {
     }
     if (headers.some(function(value, index) { return value !== ERDENET_HEADERS[index]; })) return jsonOutput({ ok: false });
     var lastRow = sheet.getLastRow();
+    // The Sheet is the record of who won what: one prize per phone for the whole event.
+    var prizeIds = {};
+    Object.keys(ERDENET_PRIZES).forEach(function(key) { prizeIds[ERDENET_PRIZES[key]] = key; });
+    var phonePrize = '';
     if (lastRow > 1) {
-      var existing = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+      var existing = sheet.getRange(2, 1, lastRow - 1, ERDENET_HEADERS.length).getValues();
       for (var i = 0; i < existing.length; i++) {
         var row = existing[i];
         var existingId = String(row[0]).replace(/^'/, '');
@@ -54,19 +58,22 @@ function doPost(e) {
         var existingEvent = String(row[4]).replace(/^'/, '');
         var existingDay = String(row[5]).replace(/^'/, '');
         var existingTime = String(row[6]).replace(/^'/, '');
+        var existingPrize = prizeIds[String(row[11]).replace(/^'/, '')] || '';
         if (existingId === data.id && (existingPhone !== data.phone || existingDay !== data.day || existingTime !== data.time || existingEvent !== ERDENET_EVENT)) return jsonOutput({ ok: false });
         if (existingId === data.id || (existingPhone === data.phone && existingEvent === ERDENET_EVENT && existingDay === data.day && existingTime === data.time)) {
-          return jsonOutput({ ok: true, requestId: data.id, id: existingId });
+          return jsonOutput({ ok: true, requestId: data.id, id: existingId, prize: existingPrize || data.prize });
         }
+        if (!phonePrize && existingPrize && existingPhone === data.phone && existingEvent === ERDENET_EVENT) phonePrize = existingPrize;
       }
     }
+    var prize = phonePrize || data.prize;
     var createdAt = Utilities.formatDate(new Date(data.createdAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
     var consentAt = Utilities.formatDate(new Date(data.consentAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
-    var values = [data.id, createdAt, data.name.trim(), data.phone, ERDENET_EVENT, data.day, data.time, 'erdenet-web', data.utmSource || '', data.utmCampaign || '', consentAt + ' / ' + data.consentVersion, ERDENET_PRIZES[data.prize]];
+    var values = [data.id, createdAt, data.name.trim(), data.phone, ERDENET_EVENT, data.day, data.time, 'erdenet-web', data.utmSource || '', data.utmCampaign || '', consentAt + ' / ' + data.consentVersion, ERDENET_PRIZES[prize]];
     if (lastRow + 1 > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1000);
     sheet.getRange(lastRow + 1, 1, 1, values.length).setNumberFormat('@').setValues([values.map(literalText)]);
     SpreadsheetApp.flush();
-    return jsonOutput({ ok: true, requestId: data.id, id: data.id });
+    return jsonOutput({ ok: true, requestId: data.id, id: data.id, prize: prize });
   } catch (error) {
     return jsonOutput({ ok: false });
   } finally {

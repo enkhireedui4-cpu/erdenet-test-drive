@@ -23,7 +23,8 @@ async (page) => {
     if (mode === "failure") return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Unavailable" }) });
     return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ status: "pending", receipt: "a".repeat(32), day: payload.day, time: payload.time, prize: "notebook" }) });
   });
-  await page.route("**/api/leads/*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ status, day: selectedDay, time: selectedTime, prize: "notebook" }) }));
+  let statusCalls = 0;
+  await page.route("**/api/leads/*", route => { statusCalls++; return route.fulfill({ contentType: "application/json", body: JSON.stringify({ status, day: selectedDay, time: selectedTime, prize: "notebook" }) }); });
   await page.reload({ waitUntil: "networkidle" });
   check(await page.locator("#form-content").isVisible() && await page.locator("#result-panel").isHidden(), "A v1 receipt must not show a result");
   check(await stage() === "form", "The page starts in the form stage");
@@ -89,9 +90,12 @@ async (page) => {
   check((await page.locator("#form-status").textContent()).includes("Тэмдэглэлийн дэвтэр"), "The prize is announced to screen readers");
   reports.push(`spin lands on the server prize (${spinMs}ms)`);
 
+  statusCalls = 0;
   await page.reload({ waitUntil: "networkidle" });
   await page.locator("#prize-card").waitFor({ state: "visible" });
   check(await stage() === "prize" && await page.locator("#spin-button").isHidden(), "Reload shows the same prize without a second spin");
+  await page.waitForTimeout(600);
+  check(statusCalls === 0, `A confirmed registration must not poll the status endpoint after reload (${statusCalls} calls)`);
   check((await page.locator("#prize-title").textContent()) === "Таны бэлэг: Тэмдэглэлийн дэвтэр", "Reload keeps the same prize");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator("#registration").scrollIntoViewIfNeeded();
@@ -113,7 +117,11 @@ async (page) => {
 
   // While a lead stays pending, status polls must not move the wheel or replace the prize announcement.
   status = "pending";
-  await page.evaluate(() => localStorage.removeItem("sain-erdenet-spun-v2"));
+  await page.evaluate(() => {
+    localStorage.removeItem("sain-erdenet-spun-v2");
+    const saved = JSON.parse(localStorage.getItem("sain-erdenet-receipt-v2"));
+    localStorage.setItem("sain-erdenet-receipt-v2", JSON.stringify({ ...saved, status: "pending" }));
+  });
   await page.reload({ waitUntil: "networkidle" });
   await page.locator("#spin-button").waitFor({ state: "visible" });
   await page.locator("#spin-button").click();

@@ -100,3 +100,30 @@ test("receiver rejects an unknown prize and old-event payloads", () => {
   assert.equal(r.post({ ...data(), day: "2026-11-22" }).ok, false);
   assert.equal(r.rows.length, 1);
 });
+
+test("receiver reports the prize it stored for a new registration", () => {
+  const r = receiver();
+  const result = r.post(data());
+  assert.equal(result.ok, true);
+  assert.equal(result.prize, "umbrella");
+});
+
+test("receiver reuses a phone's first prize on another day and reports it", () => {
+  const r = receiver();
+  assert.equal(r.post(data()).prize, "umbrella");
+  const second = r.post({ ...data(), day: "2026-11-29", time: "17:00", prize: "gift" });
+  assert.equal(second.ok, true);
+  assert.equal(second.prize, "umbrella");
+  assert.equal(r.rows[2][11], "'Борооны шүхэр");
+});
+
+test("receiver returns the stored prize when the same registration arrives again", () => {
+  const r = receiver();
+  const first = data();
+  r.post(first);
+  const again = r.post({ ...data(), prize: "gift" });
+  assert.equal(again.ok, true);
+  assert.equal(again.id, first.id);
+  assert.equal(again.prize, "umbrella");
+  assert.equal(r.rows.length, 2);
+});
