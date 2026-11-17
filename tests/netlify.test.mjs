@@ -66,6 +66,16 @@ test("a duplicate phone receives a clear conflict instead of a new receipt", asy
   assert.equal(body.receipt, undefined);
 });
 
+test("a saved registration without a remaining gift is still confirmed", async () => {
+  const s = sheet(p => Response.json({ ok: true, requestId: p.id, id: p.id, prize: "none" }));
+  const response = await post(createLeadHandler({ getConfig: config, fetcher: s.fetcher }), lead());
+  assert.equal(response.status, 201);
+  const result = await response.json();
+  assert.equal(result.status, "synced");
+  assert.equal(result.prize, "none");
+  assert.match(result.receipt, /^[A-Za-z0-9_-]{32}$/);
+});
+
 test("rejects foreign origins, wrong content types, oversized or invalid bodies and other routes", async () => {
   const s = sheet(p => Response.json({ ok: true, requestId: p.id, id: p.id, prize: "usb" }));
   const handler = createLeadHandler({ getConfig: config, fetcher: s.fetcher });

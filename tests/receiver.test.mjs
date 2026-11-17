@@ -16,10 +16,11 @@ function receiver(initialMaxRows = 1000, { legacyHeaders = false } = {}) {
     getRange: (row, column, height = 1, width = 1) => ({
       getValues: () => Array.from({ length: height }, (_, i) => rows[row - 1 + i]?.slice(column - 1, column - 1 + width) ?? Array(width).fill("")),
       setNumberFormat() { return this; },
-      setValues(values) { if (failWrite) throw new Error("quota"); if (row + values.length - 1 > maxRows) throw new Error("Rows out of bounds"); values.forEach((r, i) => { rows[row - 1 + i] = r; }); return this; },
+      setValues(values) { if (failWrite) throw new Error("quota"); if (row + values.length - 1 > maxRows) throw new Error("Rows out of bounds"); values.forEach((r, i) => { const target = rows[row - 1 + i] ?? []; r.forEach((value, j) => { target[column - 1 + j] = value; }); rows[row - 1 + i] = target; }); return this; },
     }),
   };
   const context = vm.createContext({
+    Math: Object.assign(Object.create(Math), { random: () => 0 }),
     ContentService: { MimeType: { JSON: "JSON" }, createTextOutput: text => ({ text, setMimeType() { return this; } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => { if (locked) return false; locked = true; return true; }, releaseLock: () => { locked = false; } }) },
     SpreadsheetApp: { openById: id => { assert.equal(id, "1argV8PktHaKNvW5_iK0UICcwOkHGDJtEq__PwSOGs2k"); return { getSheetByName: name => { assert.equal(name, "Sheet1"); return sheet; } }; }, flush() { if (failWrite) throw new Error("quota"); } },
@@ -88,7 +89,7 @@ test("receiver upgrades a legacy 11-column header row and stores the prize label
   const r = receiver(1000, { legacyHeaders: true });
   assert.equal(r.post(data()).ok, true);
   assert.equal(r.rows[0][11], "Бэлэг");
-  assert.equal(r.rows[1][11], "'Борооны шүхэр");
+  assert.equal(r.rows[1][11], "'Шүхэр");
 });
 
 test("receiver rejects an unknown prize and old-event payloads", () => {
@@ -124,4 +125,38 @@ test("receiver returns the stored prize when the same registration arrives again
   assert.equal(again.id, first.id);
   assert.equal(again.prize, "umbrella");
   assert.equal(r.rows.length, 2);
+});
+
+test("receiver enforces all four quotas, never awards the general gift and accepts registrations after exhaustion", () => {
+  const r = receiver();
+  const counts = {};
+  for (let i = 0; i < 112; i++) {
+    const lead = { ...data(), phone: `+976${String(i).padStart(8, "0")}`, prize: "generalGift" };
+    const result = r.post(lead);
+    assert.equal(result.ok, true);
+    counts[result.prize] = (counts[result.prize] || 0) + 1;
+    assert.equal(r.post(lead).prize, result.prize);
+  }
+  assert.deepEqual(counts, { umbrella: 30, usb: 10, notebook: 20, gift: 50, none: 2 });
+  assert.equal(r.rows.length, 113);
+  assert.equal(r.rows[31][11], "'USB багц");
+  assert.equal(r.rows[41][11], "'Хуванцар дугаар бичигч");
+  assert.equal(r.rows[61][11], "'Дугаар бичигч");
+});
+
+test("receiver ignores the two existing test leads and counts the real lead's legacy gift", () => {
+  const r = receiver();
+  const ids = ["9c4a6cb0-16ae-4c30-b539-f7f92a3443c5", "fbdea9e6-01c6-4a01-9f4f-544de11b2bc3", "fdb23047-35c4-415c-84f5-dd82a984710d"];
+  const labels = ["Тэмдэглэлийн дэвтэр", "Борооны шүхэр", "Гарын бэлэг"];
+  ids.forEach((id, i) => r.rows.push([id, "2026-11-17", i < 2 ? "test" : "Мөнхдэлгэр", `+9769000000${i}`, "erdenet-opening-2026-11", "2026-11-28", "12:00", "erdenet-web", "", "", "consent", labels[i]]));
+  const counts = {};
+  for (let i = 0; i < 110; i++) {
+    const result = r.post({ ...data(), phone: `+976${String(i).padStart(8, "0")}` });
+    assert.equal(result.ok, true);
+    counts[result.prize] = (counts[result.prize] || 0) + 1;
+  }
+  assert.deepEqual(counts, { umbrella: 30, usb: 10, notebook: 20, gift: 49, none: 1 });
+  assert.equal(r.rows[3][11], "'Дугаар бичигч", "the real lead gets a concrete gift label");
+  assert.equal(r.rows[1][11], "Тэмдэглэлийн дэвтэр", "test rows remain unchanged");
+  assert.equal(r.rows[2][11], "Борооны шүхэр", "test rows remain unchanged");
 });

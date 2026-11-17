@@ -6,7 +6,20 @@ var ERDENET_SECRET = '__WEBHOOK_SECRET__';
 var ERDENET_EVENT = 'erdenet-opening-2026-11';
 var ERDENET_HEADERS = ['Бүртгэлийн ID', 'Бүртгэсэн огноо', 'Нэр', 'Утас', 'Эвент', 'Өдөр', 'Цаг', 'Эх сурвалж', 'UTM source', 'UTM campaign', 'Зөвшөөрөл', 'Бэлэг'];
 // Mirrors PRIZES in public/lead-validation.js; the Sheet shows the label.
-var ERDENET_PRIZES = { umbrella: 'Борооны шүхэр', usb: 'USB багц', notebook: 'Тэмдэглэлийн дэвтэр', gift: 'Гарын бэлэг' };
+var ERDENET_PRIZES = { umbrella: 'Шүхэр', usb: 'USB багц', notebook: 'Хуванцар дугаар бичигч', gift: 'Дугаар бичигч', generalGift: 'Гарын бэлэг', none: 'Бэлэг олгогдоогүй' };
+var ERDENET_STOCK = { umbrella: 30, usb: 10, notebook: 20, gift: 50, generalGift: 0 };
+var ERDENET_TEST_IDS = ['9c4a6cb0-16ae-4c30-b539-f7f92a3443c5', 'fbdea9e6-01c6-4a01-9f4f-544de11b2bc3'];
+
+function drawRemainingPrize(remaining) {
+  var ids = Object.keys(ERDENET_STOCK);
+  var total = ids.reduce(function(sum, id) { return sum + remaining[id]; }, 0);
+  if (!total) return 'none';
+  var position = Math.floor(Math.random() * total);
+  for (var i = 0; i < ids.length; i++) {
+    if (position < remaining[ids[i]]) return ids[i];
+    position -= remaining[ids[i]];
+  }
+}
 
 function jsonOutput(value) {
   return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
@@ -48,7 +61,13 @@ function doPost(e) {
     // The Sheet is the record of who won what: one prize per phone for the whole event.
     var prizeIds = {};
     Object.keys(ERDENET_PRIZES).forEach(function(key) { prizeIds[ERDENET_PRIZES[key]] = key; });
+    // Awards written by the earlier deployment still consume their matching stock.
+    prizeIds['Тэмдэглэлийн дэвтэр'] = 'notebook';
+    prizeIds['Гарын бэлэг'] = 'gift';
+    prizeIds['Борооны шүхэр'] = 'umbrella';
+    var remaining = Object.assign({}, ERDENET_STOCK);
     var duplicatePhone = false;
+    var labelsChanged = false;
     if (lastRow > 1) {
       var existing = sheet.getRange(2, 1, lastRow - 1, ERDENET_HEADERS.length).getValues();
       for (var i = 0; i < existing.length; i++) {
@@ -60,14 +79,26 @@ function doPost(e) {
         var existingTime = String(row[6]).replace(/^'/, '');
         var existingPrize = prizeIds[String(row[11]).replace(/^'/, '')] || '';
         if (existingId === data.id && (existingPhone !== data.phone || existingDay !== data.day || existingTime !== data.time || existingEvent !== ERDENET_EVENT)) return jsonOutput({ ok: false });
+        var realEventLead = existingEvent === ERDENET_EVENT && ERDENET_TEST_IDS.indexOf(existingId) < 0;
+        if (realEventLead && existingPrize && String(row[11]).replace(/^'/, '') !== ERDENET_PRIZES[existingPrize]) {
+          sheet.getRange(i + 2, 12).setNumberFormat('@').setValues([[literalText(ERDENET_PRIZES[existingPrize])]]);
+          labelsChanged = true;
+        }
         if (existingId === data.id) {
-          return jsonOutput({ ok: true, requestId: data.id, id: existingId, prize: existingPrize || data.prize });
+          if (labelsChanged) SpreadsheetApp.flush();
+          return jsonOutput({ ok: true, requestId: data.id, id: existingId, prize: existingPrize || 'none' });
         }
         if (existingPhone === data.phone && existingEvent === ERDENET_EVENT) duplicatePhone = true;
+        if (realEventLead && Object.prototype.hasOwnProperty.call(remaining, existingPrize)) {
+          remaining[existingPrize] = Math.max(0, remaining[existingPrize] - 1);
+        }
       }
     }
-    if (duplicatePhone) return jsonOutput({ ok: true, requestId: data.id, duplicate: true });
-    var prize = data.prize;
+    if (duplicatePhone) {
+      if (labelsChanged) SpreadsheetApp.flush();
+      return jsonOutput({ ok: true, requestId: data.id, duplicate: true });
+    }
+    var prize = ERDENET_TEST_IDS.indexOf(data.id) >= 0 ? 'none' : drawRemainingPrize(remaining);
     var createdAt = Utilities.formatDate(new Date(data.createdAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
     var consentAt = Utilities.formatDate(new Date(data.consentAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
     var values = [data.id, createdAt, data.name.trim(), data.phone, ERDENET_EVENT, data.day, data.time, 'erdenet-web', data.utmSource || '', data.utmCampaign || '', consentAt + ' / ' + data.consentVersion, ERDENET_PRIZES[prize]];

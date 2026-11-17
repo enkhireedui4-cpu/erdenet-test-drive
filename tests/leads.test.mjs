@@ -59,8 +59,8 @@ test("only offers 17:00 on opening day and five two-hour options on test-drive d
   for (const time of ["", "17:00", "20:00", "bad"]) assert.equal(validateLead(input({ time })).ok, false);
 });
 
-test("exposes the four wheel prizes with Mongolian labels", () => {
-  assert.deepEqual(PRIZES.map(p => p.id), ["umbrella", "usb", "notebook", "gift"]);
+test("exposes four actual gifts and the visible general gift with Mongolian labels", () => {
+  assert.deepEqual(PRIZES.map(p => p.id), ["umbrella", "usb", "notebook", "gift", "generalGift"]);
   assert.equal(prizeLabel("usb"), "USB багц");
   assert.equal(prizeLabel("car"), undefined);
   assert.equal(EVENT_ID, "erdenet-opening-2026-11");
@@ -73,6 +73,29 @@ test("a new lead stores one server-drawn prize and retries keep it", (t) => {
   const first = store.accept(data);
   assert.ok(PRIZES.some(p => p.id === first.prize));
   assert.equal(store.accept(data).prize, first.prize);
+});
+
+test("local inventory awards 30 umbrellas, 10 USB bundles, 20 plastic holders and 50 holders, then keeps registering", t => {
+  const { store } = fixture(t);
+  const counts = {};
+  for (let i = 0; i < 112; i++) {
+    const data = validateLead(input({ phone: String(i).padStart(8, "0") })).data;
+    const accepted = store.accept(data);
+    counts[accepted.prize] = (counts[accepted.prize] || 0) + 1;
+    assert.equal(store.accept(data).prize, accepted.prize, "retries preserve the award");
+  }
+  assert.deepEqual(counts, { umbrella: 30, usb: 10, notebook: 20, gift: 50, none: 2 });
+  assert.equal(counts.generalGift, undefined);
+  assert.equal(store.pending(Date.now(), 200).length, 112);
+});
+
+test("the two identified test IDs never consume local gift stock", t => {
+  const { store } = fixture(t);
+  for (const [i, requestId] of ["9c4a6cb0-16ae-4c30-b539-f7f92a3443c5", "fbdea9e6-01c6-4a01-9f4f-544de11b2bc3"].entries()) {
+    assert.equal(store.accept(validateLead(input({ requestId, phone: `9000000${i}` })).data).prize, "none");
+  }
+  for (let i = 0; i < 110; i++) assert.notEqual(store.accept(validateLead(input({ phone: String(i).padStart(8, "0") })).data).prize, "none");
+  assert.equal(store.accept(validateLead(input({ phone: "00000110" })).data).prize, "none");
 });
 
 test("the same phone on another day is rejected", (t) => {
@@ -127,6 +150,18 @@ test("Google outages leave a durable pending lead that a later worker synchroniz
   assert.equal(posted.prize, lead.prize);
   assert.equal(restarted.byId(lead.id).status, "synced");
   assert.equal(restarted.pending().length, 0);
+});
+
+test("local synchronization keeps the Sheet's authoritative award, including no award", async t => {
+  for (const prize of ["gift", "none"]) {
+    const store = createLeadStore(":memory:", { pickPrize: () => "umbrella" });
+    t.after(() => store.close());
+    const lead = store.accept(validateLead(input()).data);
+    const sync = createSheetSync({ store, getConfig: () => ({ url: "https://script.google.com/macros/s/test/exec", secret: "test-secret" }), fetcher: async () => Response.json({ ok: true, requestId: lead.id, id: lead.id, prize }) });
+    assert.equal(await sync.send(lead.id), true);
+    assert.equal(store.byReceipt(lead.receipt).prize, prize);
+    assert.equal(store.byReceipt(lead.receipt).status, "synced");
+  }
 });
 
 test("HTTP 200, an opaque response, or a mismatched acknowledgement never confirms a lead", async (t) => {

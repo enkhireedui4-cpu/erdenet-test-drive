@@ -7,12 +7,13 @@ export const EVENT_DAYS = Object.freeze({
 export const CONSENT_VERSION = "erdenet-opening-v1";
 // The server draws the prize; the browser only reveals it on the wheel.
 export const PRIZES = Object.freeze([
-  Object.freeze({ id: "umbrella", label: "Борооны шүхэр", short: "Шүхэр" }),
+  Object.freeze({ id: "umbrella", label: "Шүхэр", short: "Шүхэр" }),
   Object.freeze({ id: "usb", label: "USB багц", short: "USB багц" }),
-  Object.freeze({ id: "notebook", label: "Тэмдэглэлийн дэвтэр", short: "Дэвтэр" }),
-  Object.freeze({ id: "gift", label: "Гарын бэлэг", short: "Гарын бэлэг" }),
+  Object.freeze({ id: "notebook", label: "Хуванцар дугаар бичигч", short: "Хуванцар дугаар бичигч" }),
+  Object.freeze({ id: "gift", label: "Дугаар бичигч", short: "Дугаар бичигч" }),
+  Object.freeze({ id: "generalGift", label: "Гарын бэлэг", short: "Гарын бэлэг" }),
 ]);
-export const prizeLabel = id => PRIZES.find(prize => prize.id === id)?.label;
+export const prizeLabel = id => id === "none" ? "Бэлгийн нөөц дууссан" : PRIZES.find(prize => prize.id === id)?.label;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function normalizePhone(value) {

@@ -87,6 +87,7 @@ h1{margin-top:36px;max-width:20ch;font:700 clamp(30px,3.6vw,48px)/1.12 var(--dis
 .slice-red{fill:var(--red)}
 .slice-dusk{fill:var(--dusk)}
 .wheel-slice text{fill:var(--paper);font:700 8.6px var(--display);letter-spacing:.02em;text-anchor:middle;dominant-baseline:central}
+.wheel-slice .wheel-label-long{font-size:7.2px}
 .wheel-hub{fill:var(--night);stroke:#E8EBF1;stroke-width:2.6}
 .wheel-pointer{position:absolute;z-index:2;top:-4px;left:50%;width:34px;height:auto;transform:translateX(-50%);filter:drop-shadow(0 4px 6px rgba(0,0,0,.45))}
 .wheel-pointer path{fill:var(--red);stroke:var(--paper);stroke-width:2}

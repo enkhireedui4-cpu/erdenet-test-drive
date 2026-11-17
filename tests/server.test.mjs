@@ -66,6 +66,30 @@ test("a checked Google acknowledgement changes the response to confirmed", async
   assert.equal((await response.json()).status, "synced");
 });
 
+test("a Sheet outage withholds provisional awards until the authoritative gift is confirmed", async t => {
+  let available = false;
+  const f = await fixture(t, {
+    getSheetConfig: () => ({ url: "https://script.google.com/macros/s/test/exec", secret: "test-secret" }),
+    fetcher: async (url, options) => {
+      if (!available) throw new Error("offline");
+      const lead = JSON.parse(options.body);
+      return Response.json({ ok: true, requestId: lead.id, id: lead.id, prize: "gift" });
+    },
+  });
+  const input = valid();
+  const response = await f.post(input);
+  assert.equal(response.status, 202);
+  const body = await response.json();
+  assert.equal(body.prize, "pending", "a visitor must not see an unconfirmed award");
+  assert.equal((await fetch(`${f.origin}/api/leads/${body.receipt}`).then(r => r.json())).prize, "pending");
+  available = true;
+  assert.equal(await f.sync.send(input.requestId), true);
+  const confirmed = await fetch(`${f.origin}/api/leads/${body.receipt}`).then(r => r.json());
+  assert.equal(confirmed.status, "synced");
+  assert.equal(confirmed.prize, "gift");
+  assert.equal((await (await f.post(input)).json()).prize, "gift");
+});
+
 test("rejects invalid consent, foreign origins, oversized bodies and unsupported methods", async (t) => {
   const f = await fixture(t);
   assert.equal((await f.post({ ...valid(), consent: false })).status, 400);

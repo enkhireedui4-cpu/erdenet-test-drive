@@ -70,16 +70,17 @@ function loading(value) {
 // The wheel only reveals the prize the server drew; it never decides one.
 function spunPrize() { const spun = readStored(SPUN_KEY); return spun && spun.receipt === receipt && prizeLabel(spun.prize) ? spun.prize : ""; }
 function landingAngle(prizeId, turns = 0, jitter = 0, randomSlice = true) {
-  // Slices run clockwise from 12 o'clock, 45° each; the pointer is fixed at 0°.
+  // Equal slices run clockwise from 12 o'clock; the pointer stays fixed at 0°.
+  const sliceAngle = 360 / slices.length;
   const matches = slices.flatMap((slice, i) => slice.dataset.prize === prizeId ? [i] : []);
   const k = randomSlice ? matches[Math.floor(Math.random() * matches.length)] : matches[0];
-  return 360 * turns + (360 - (k * 45 + 22.5)) + jitter;
+  return 360 * turns + (360 - (k * sliceAngle + sliceAngle / 2)) + jitter;
 }
 // A restored reveal rests on a fixed slice so repeated renders never move the wheel.
 function restWheel(prizeId) { rotor.style.transition = "none"; rotor.style.transform = `rotate(${landingAngle(prizeId, 0, 0, false)}deg)`; }
 function spinTo(prizeId) {
   return new Promise(resolve => {
-    const target = landingAngle(prizeId, 6, (Math.random() - 0.5) * 30);
+    const target = landingAngle(prizeId, 6, (Math.random() - 0.5) * (360 / slices.length - 10));
     rotor.style.transition = "none"; rotor.style.transform = "rotate(0deg)";
     if (reduceMotion()) { rotor.style.transform = `rotate(${target}deg)`; resolve(); return; }
     let done = false;
@@ -99,12 +100,14 @@ function stageTitle(status, stage) {
 }
 function showPrize(prizeId, { animate = false } = {}) {
   const label = prizeLabel(prizeId);
+  const noAward = prizeId === "none";
   panel.dataset.stage = "prize";
   spinButton.hidden = true;
   prizeCard.hidden = false;
   document.querySelector("#result-title").textContent = stageTitle(resultMode, "prize");
-  document.querySelector("#prize-title").textContent = `Таны бэлэг: ${label}`;
-  document.querySelector("#prize-body").textContent = PRIZE_BODY;
+  document.querySelector("#prize-title").textContent = noAward ? label : `Таны бэлэг: ${label}`;
+  document.querySelector("#prize-body").textContent = noAward ? "Эхний 110 хүний бэлгийн нөөц дууссан байна. Та эвентэд бүртгэгдсэн тул сонгосон өдөр, цагтаа хүрэлцэн ирээрэй." : PRIZE_BODY;
+  document.querySelector(".prize-note").hidden = noAward;
   if (!animate) return;
   prizeCard.classList.remove("is-revealed"); void prizeCard.offsetWidth; prizeCard.classList.add("is-revealed");
   prizeCard.focus({ preventScroll: true });
@@ -128,8 +131,9 @@ function showResult(status, focus = true) {
   document.querySelector("#form-content").hidden = true; result.hidden = false;
   // The spin record only marks the reveal as done; the prize shown is the server's.
   const spun = spunPrize();
-  const prize = spun ? (prizeLabel(acceptedPrize) ? acceptedPrize : spun) : "";
-  const stage = prize ? "prize" : "spin";
+  const waiting = !prizeLabel(acceptedPrize);
+  const prize = acceptedPrize === "none" ? "none" : spun ? (prizeLabel(acceptedPrize) ? acceptedPrize : spun) : "";
+  const stage = waiting ? "waiting" : prize ? "prize" : "spin";
   if (!spinning) panel.dataset.stage = stage;
   document.querySelector("#result-symbol").textContent = synced ? "✓" : "…";
   const title = stageTitle(status, spinning ? "spin" : stage);
@@ -140,7 +144,8 @@ function showResult(status, focus = true) {
   document.querySelector("#result-slot").textContent = slotLabel(acceptedSlot.day, acceptedSlot.time);
   retryButton.hidden = synced;
   if (!spinning) {
-    if (prize) { if (previousStage !== "prize") restWheel(prize); showPrize(prize); }
+    if (waiting) { spinButton.hidden = true; prizeCard.hidden = true; }
+    else if (prize) { if (prize !== "none" && (previousStage !== "prize" || spun !== prize)) restWheel(prize); showPrize(prize); }
     else { spinButton.hidden = false; spinButton.disabled = !prizeLabel(acceptedPrize); prizeCard.hidden = true; }
   }
   // Polls that change nothing must not replace an earlier announcement (such as the prize).
@@ -150,7 +155,7 @@ function showResult(status, focus = true) {
   if (synced) { clearTimeout(pollTimer); removeStored(OUTBOX_KEY); submitted = null; form.reset(); }
 }
 function acceptResponse(body) {
-  if (!["pending", "synced"].includes(body?.status) || !EVENT_SLOTS[body.day]?.includes(body.time) || !prizeLabel(body.prize)) return false;
+  if (!["pending", "synced"].includes(body?.status) || !EVENT_SLOTS[body.day]?.includes(body.time) || !(prizeLabel(body.prize) || (body.status === "pending" && body.prize === "pending"))) return false;
   acceptedSlot = { day: body.day, time: body.time };
   acceptedPrize = body.prize;
   return true;
@@ -238,7 +243,7 @@ if (savedReceipt && savedReceipt.expires > Date.now() && /^[A-Za-z0-9_-]{32}$/.t
   if (prizeLabel(savedReceipt.prize)) acceptedPrize = savedReceipt.prize;
   // A confirmed registration is final; only a pending one keeps asking the server.
   if (savedReceipt.status === "synced") showResult("synced", false);
-  else { showResult("pending", false); void checkStatus(); }
+  else { acceptedPrize = "pending"; showResult("pending", false); void checkStatus(); }
 } else if (savedSubmission?.expires > Date.now() && validateLead(savedSubmission).ok) {
   submitted = savedSubmission;
   form.querySelector(`[name="day"][value="${submitted.day}"]`).checked = true;

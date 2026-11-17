@@ -76,18 +76,20 @@ async (page) => {
   await page.waitForFunction(() => document.querySelector("#registration").dataset.stage === "prize", null, { timeout: 7000 });
   const spinMs = Date.now() - started;
   check(spinMs > 3000, `A normal spin must animate (took ${spinMs}ms)`);
-  check((await page.locator("#prize-title").textContent()) === "Таны бэлэг: Тэмдэглэлийн дэвтэр", "Prize card names the server-drawn prize");
+  check((await page.locator("#prize-title").textContent()) === "Таны бэлэг: Хуванцар дугаар бичигч", "Prize card names the server-drawn prize");
   const landed = await page.evaluate(() => {
     const [a, b] = getComputedStyle(document.querySelector("#wheel-rotor")).transform.match(/-?[\d.e]+/g).map(Number);
     const rotation = Math.atan2(b, a) * 180 / Math.PI;
-    return [...document.querySelectorAll(".wheel-slice")].filter((slice, i) => {
-      const angle = ((i * 45 + 22.5 + rotation) % 360 + 540) % 360 - 180;
-      return Math.abs(angle) <= 22.5;
+    const slices = [...document.querySelectorAll(".wheel-slice")];
+    const sector = 360 / slices.length;
+    return slices.filter((slice, i) => {
+      const angle = ((i * sector + sector / 2 + rotation) % 360 + 540) % 360 - 180;
+      return Math.abs(angle) <= sector / 2;
     }).map(slice => slice.dataset.prize);
   });
   check(landed.length === 1 && landed[0] === "notebook", `The pointer must rest on a notebook slice (got ${landed})`);
   check(await page.locator("#spin-button").isHidden(), "Spin button disappears after the reveal");
-  check((await page.locator("#form-status").textContent()).includes("Тэмдэглэлийн дэвтэр"), "The prize is announced to screen readers");
+  check((await page.locator("#form-status").textContent()).includes("Хуванцар дугаар бичигч"), "The prize is announced to screen readers");
   reports.push(`spin lands on the server prize (${spinMs}ms)`);
 
   statusCalls = 0;
@@ -96,7 +98,7 @@ async (page) => {
   check(await stage() === "prize" && await page.locator("#spin-button").isHidden(), "Reload shows the same prize without a second spin");
   await page.waitForTimeout(600);
   check(statusCalls === 0, `A confirmed registration must not poll the status endpoint after reload (${statusCalls} calls)`);
-  check((await page.locator("#prize-title").textContent()) === "Таны бэлэг: Тэмдэглэлийн дэвтэр", "Reload keeps the same prize");
+  check((await page.locator("#prize-title").textContent()) === "Таны бэлэг: Хуванцар дугаар бичигч", "Reload keeps the same prize");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator("#registration").scrollIntoViewIfNeeded();
   await page.evaluate(() => document.querySelector("#registration").scrollIntoView({ block: "start" }));
@@ -131,7 +133,7 @@ async (page) => {
   await page.waitForTimeout(11_500);
   const afterPoll = await snapshot();
   check(afterPoll.transform === revealed.transform, `A pending poll moved the wheel (${revealed.transform} -> ${afterPoll.transform})`);
-  check(afterPoll.live === revealed.live && afterPoll.live.includes("Тэмдэглэлийн дэвтэр"), "A pending poll replaced the prize announcement");
+  check(afterPoll.live === revealed.live && afterPoll.live.includes("Хуванцар дугаар бичигч"), "A pending poll replaced the prize announcement");
   await page.reload({ waitUntil: "networkidle" });
   await page.locator("#prize-card").waitFor({ state: "visible" });
   const reloaded = await snapshot();

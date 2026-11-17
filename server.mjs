@@ -35,6 +35,10 @@ function readJson(req) {
 export function createApp({ dbPath = path.join(ROOT, "data", "leads.sqlite"), getSheetConfig = () => { const config = readLocalConfig(); return { url: config.GOOGLE_SHEETS_WEBHOOK_URL, secret: config.LEAD_WEBHOOK_SECRET }; }, fetcher, retryIntervalMs = 30_000, allowedOrigins = ["http://localhost:3210", "http://127.0.0.1:3210"] } = {}) {
   const store = createLeadStore(dbPath);
   const sync = createSheetSync({ store, getConfig: getSheetConfig, fetcher });
+  const responsePrize = lead => {
+    const config = getSheetConfig();
+    return lead.status === "pending" && validSheetUrl(config.url) && config.secret ? "pending" : lead.prize;
+  };
   let origins = new Set(allowedOrigins), closing = false;
   const rate = new Map();
   const server = createServer(async (req, res) => {
@@ -63,13 +67,13 @@ export function createApp({ dbPath = path.join(ROOT, "data", "leads.sqlite"), ge
         }
         await sync.send(lead.id);
         lead = store.byId(lead.id);
-        return json(res, lead.status === "synced" ? 201 : 202, { status: lead.status, receipt: lead.receipt, day: lead.day, time: lead.time, prize: lead.prize });
+        return json(res, lead.status === "synced" ? 201 : 202, { status: lead.status, receipt: lead.receipt, day: lead.day, time: lead.time, prize: responsePrize(lead) });
       }
       if (pathname.startsWith("/api/leads/")) {
         if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
         const receipt = pathname.slice("/api/leads/".length);
         const lead = /^[A-Za-z0-9_-]{32}$/.test(receipt) ? store.byReceipt(receipt) : undefined;
-        return lead ? json(res, 200, { status: lead.status, day: lead.day, time: lead.time, prize: lead.prize }) : json(res, 404, { error: "Not found" });
+        return lead ? json(res, 200, { status: lead.status, day: lead.day, time: lead.time, prize: responsePrize(lead) }) : json(res, 404, { error: "Not found" });
       }
       if (pathname === "/api/health" && req.method === "GET") {
         const config = getSheetConfig();
