@@ -43,7 +43,7 @@ test("receiver authenticates writes, deduplicates retries and safely stores lite
   assert.ok(f.rows[1][2].startsWith("'="));
   assert.ok(f.rows[1][3].startsWith("'+976"));
   assert.equal(f.post(lead).id, first.id);
-  assert.equal(f.post({ ...lead, id: randomUUID() }).id, first.id);
+  assert.equal(f.post({ ...lead, id: randomUUID() }).duplicate, true);
   assert.equal(f.rows.length, 2);
   assert.equal(f.post({ ...data(), secret: "wrong" }).ok, false);
   assert.equal(f.rows.length, 2);
@@ -73,15 +73,13 @@ test("receiver refuses to acknowledge a reused ID with different contact data", 
   assert.equal(f.rows.length, 2);
 });
 
-test("receiver stores the chosen day and allows one registration per phone on each day", () => {
+test("receiver rejects a new registration for the same phone across days", () => {
   const f = receiver();
   assert.equal(f.post({ ...data(), day: "2026-11-29", time: "17:00" }).ok, true);
-  assert.equal(f.post({ ...data(), day: "2026-11-28" }).ok, true);
-  assert.equal(f.rows.length, 3);
+  assert.equal(f.post({ ...data(), day: "2026-11-28" }).duplicate, true);
+  assert.equal(f.rows.length, 2);
   assert.equal(f.rows[1][5], "'2026-11-29");
-  assert.equal(f.rows[2][5], "'2026-11-28");
   assert.equal(f.rows[1][6], "'17:00");
-  assert.equal(f.rows[2][6], "'10:00");
   assert.equal(f.post({ ...data(), day: "2026-11-29", time: "10:00" }).ok, false);
   assert.equal(f.post({ ...data(), day: "2026-11-30" }).ok, false);
 });
@@ -108,20 +106,20 @@ test("receiver reports the prize it stored for a new registration", () => {
   assert.equal(result.prize, "umbrella");
 });
 
-test("receiver reuses a phone's first prize on another day and reports it", () => {
+test("receiver rejects a phone's second registration on another day", () => {
   const r = receiver();
   assert.equal(r.post(data()).prize, "umbrella");
   const second = r.post({ ...data(), day: "2026-11-29", time: "17:00", prize: "gift" });
   assert.equal(second.ok, true);
-  assert.equal(second.prize, "umbrella");
-  assert.equal(r.rows[2][11], "'Борооны шүхэр");
+  assert.equal(second.duplicate, true);
+  assert.equal(r.rows.length, 2);
 });
 
 test("receiver returns the stored prize when the same registration arrives again", () => {
   const r = receiver();
   const first = data();
   r.post(first);
-  const again = r.post({ ...data(), prize: "gift" });
+  const again = r.post({ ...first, prize: "gift" });
   assert.equal(again.ok, true);
   assert.equal(again.id, first.id);
   assert.equal(again.prize, "umbrella");

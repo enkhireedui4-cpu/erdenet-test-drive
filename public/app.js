@@ -183,6 +183,13 @@ async function send(payload, focus = true) {
   try {
     const response = await fetch("/api/leads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(20_000), cache: "no-store" });
     const body = await response.json();
+    if (response.status === 409 && body.code === "duplicate_phone") {
+      removeStored(OUTBOX_KEY); submitted = null;
+      fieldError("phone", "Энэ дугаар бүртгэгдсэн байна.");
+      error("Энэ дугаар бүртгэгдсэн байна.");
+      if (focus) fields.phone.focus();
+      return;
+    }
     if (!response.ok || !/^[A-Za-z0-9_-]{32}$/.test(body.receipt) || !acceptResponse(body)) {
       if (body.errors) for (const name of Object.keys(fields)) fieldError(name, body.errors[name]);
       throw new Error(response.status === 429 ? "Түр хүлээгээд дахин оролдоно уу." : "Хүсэлтийг баталгаажуулж чадсангүй. Дахин оролдоорой.");

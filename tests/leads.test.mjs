@@ -44,7 +44,7 @@ test("requires explicit consent, a real name, an idempotency UUID and an empty h
 test("preserves either selected event day and rejects an unoffered date", (t) => {
   const { store } = fixture(t);
   const testDrive = validateLead(input());
-  const opening = validateLead(input({ day: "2026-11-29", time: "17:00" }));
+  const opening = validateLead(input({ phone: "00000001", day: "2026-11-29", time: "17:00" }));
   assert.equal(testDrive.data.day, "2026-11-28");
   assert.equal(opening.data.day, "2026-11-29");
   for (const day of ["2026-11-21", "2026-11-22", "2026-11-30"]) assert.equal(validateLead(input({ day })).ok, false);
@@ -75,14 +75,13 @@ test("a new lead stores one server-drawn prize and retries keep it", (t) => {
   assert.equal(store.accept(data).prize, first.prize);
 });
 
-test("the same phone on the other day reuses its first prize", (t) => {
+test("the same phone on another day is rejected", (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "erdenet-prize-"));
   let n = 0; const store = createLeadStore(path.join(directory, "l.sqlite"), { pickPrize: () => ["usb", "gift"][n++] });
   t.after(() => { store.close(); rmSync(directory, { recursive: true, force: true }); });
   const a = store.accept(validateLead(input()).data);
-  const b = store.accept(validateLead(input({ requestId: randomUUID(), day: "2026-11-29", time: "17:00" })).data);
-  assert.notEqual(a.id, b.id);
-  assert.equal(a.prize, "usb"); assert.equal(b.prize, "usb");
+  assert.throws(() => store.accept(validateLead(input({ requestId: randomUUID(), day: "2026-11-29", time: "17:00" })).data), /duplicate phone/i);
+  assert.equal(a.prize, "usb");
 });
 
 test("committed pending records and receipt tokens survive a process restart", (t) => {
@@ -101,7 +100,7 @@ test("retries and normalized duplicate phones reuse one record without overwriti
   const data = validateLead(input({ phone: "9911 2233" })).data;
   const first = store.accept(data);
   assert.equal(store.accept(data).id, first.id);
-  assert.equal(store.accept(validateLead(input({ phone: "+97699112233", name: "Өөр нэр" })).data).id, first.id);
+  assert.throws(() => store.accept(validateLead(input({ phone: "+97699112233", name: "Өөр нэр" })).data), /duplicate phone/i);
   assert.equal(store.pending().length, 1);
   assert.equal(store.byId(first.id).name, "Тест хэрэглэгч");
   assert.throws(() => store.accept({ ...data, phone: "+97688112233" }), /conflict/i);

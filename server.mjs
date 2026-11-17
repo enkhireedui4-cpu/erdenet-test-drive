@@ -56,7 +56,11 @@ export function createApp({ dbPath = path.join(ROOT, "data", "leads.sqlite"), ge
         if (entry && entry.until > now && entry.count >= 30) { res.setHeader("retry-after", "60"); return json(res, 429, { error: "Түр хүлээгээд дахин оролдоно уу." }); }
         rate.set(rateKey, entry && entry.until > now ? { ...entry, count: entry.count + 1 } : { until: now + 60_000, count: 1 });
         let lead;
-        try { lead = store.accept(input.data); } catch (error) { if (/conflict/i.test(error.message)) return json(res, 409, { error: "Мэдээлэл өөрчлөгдсөн байна. Дахин оролдоно уу." }); throw error; }
+        try { lead = store.accept(input.data); } catch (error) {
+          if (/duplicate phone/i.test(error.message)) return json(res, 409, { code: "duplicate_phone", errors: { phone: "Энэ дугаар бүртгэгдсэн байна." } });
+          if (/conflict/i.test(error.message)) return json(res, 409, { error: "Мэдээлэл өөрчлөгдсөн байна. Дахин оролдоно уу." });
+          throw error;
+        }
         await sync.send(lead.id);
         lead = store.byId(lead.id);
         return json(res, lead.status === "synced" ? 201 : 202, { status: lead.status, receipt: lead.receipt, day: lead.day, time: lead.time, prize: lead.prize });

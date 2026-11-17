@@ -56,6 +56,16 @@ test("an unavailable or unconfirmed Sheet write returns 503 without a receipt", 
   }
 });
 
+test("a duplicate phone receives a clear conflict instead of a new receipt", async () => {
+  const s = sheet(p => Response.json({ ok: true, requestId: p.id, duplicate: true }));
+  const response = await post(createLeadHandler({ getConfig: config, fetcher: s.fetcher }), lead());
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.equal(body.code, "duplicate_phone");
+  assert.equal(body.errors.phone, "Энэ дугаар бүртгэгдсэн байна.");
+  assert.equal(body.receipt, undefined);
+});
+
 test("rejects foreign origins, wrong content types, oversized or invalid bodies and other routes", async () => {
   const s = sheet(p => Response.json({ ok: true, requestId: p.id, id: p.id, prize: "usb" }));
   const handler = createLeadHandler({ getConfig: config, fetcher: s.fetcher });

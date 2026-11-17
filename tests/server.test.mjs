@@ -20,6 +20,17 @@ async function fixture(t, overrides = {}) {
 
 const valid = () => ({ requestId: randomUUID(), name: "Synthetic verification", phone: "00000000", day: "2026-11-28", time: "10:00", consent: true, website: "" });
 
+test("same request may retry, but a new request with the same phone is rejected", async (t) => {
+  const f = await fixture(t);
+  const first = valid();
+  assert.equal((await f.post(first)).status, 202);
+  assert.equal((await f.post(first)).status, 202);
+  const duplicate = await f.post({ ...valid(), phone: "+97600000000", day: "2026-11-29", time: "17:00" });
+  assert.equal(duplicate.status, 409);
+  assert.equal((await duplicate.json()).errors.phone, "Энэ дугаар бүртгэгдсэн байна.");
+  assert.equal(f.store.pending().length, 1);
+});
+
 test("intake returns pending only after durable storage; status exposes no personal data", async (t) => {
   const f = await fixture(t);
   const response = await f.post(valid());

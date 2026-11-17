@@ -48,7 +48,7 @@ function doPost(e) {
     // The Sheet is the record of who won what: one prize per phone for the whole event.
     var prizeIds = {};
     Object.keys(ERDENET_PRIZES).forEach(function(key) { prizeIds[ERDENET_PRIZES[key]] = key; });
-    var phonePrize = '';
+    var duplicatePhone = false;
     if (lastRow > 1) {
       var existing = sheet.getRange(2, 1, lastRow - 1, ERDENET_HEADERS.length).getValues();
       for (var i = 0; i < existing.length; i++) {
@@ -60,13 +60,14 @@ function doPost(e) {
         var existingTime = String(row[6]).replace(/^'/, '');
         var existingPrize = prizeIds[String(row[11]).replace(/^'/, '')] || '';
         if (existingId === data.id && (existingPhone !== data.phone || existingDay !== data.day || existingTime !== data.time || existingEvent !== ERDENET_EVENT)) return jsonOutput({ ok: false });
-        if (existingId === data.id || (existingPhone === data.phone && existingEvent === ERDENET_EVENT && existingDay === data.day && existingTime === data.time)) {
+        if (existingId === data.id) {
           return jsonOutput({ ok: true, requestId: data.id, id: existingId, prize: existingPrize || data.prize });
         }
-        if (!phonePrize && existingPrize && existingPhone === data.phone && existingEvent === ERDENET_EVENT) phonePrize = existingPrize;
+        if (existingPhone === data.phone && existingEvent === ERDENET_EVENT) duplicatePhone = true;
       }
     }
-    var prize = phonePrize || data.prize;
+    if (duplicatePhone) return jsonOutput({ ok: true, requestId: data.id, duplicate: true });
+    var prize = data.prize;
     var createdAt = Utilities.formatDate(new Date(data.createdAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
     var consentAt = Utilities.formatDate(new Date(data.consentAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
     var values = [data.id, createdAt, data.name.trim(), data.phone, ERDENET_EVENT, data.day, data.time, 'erdenet-web', data.utmSource || '', data.utmCampaign || '', consentAt + ' / ' + data.consentVersion, ERDENET_PRIZES[prize]];
