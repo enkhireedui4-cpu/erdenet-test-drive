@@ -56,6 +56,23 @@ test("an unavailable or unconfirmed Sheet write returns 503 without a receipt", 
   }
 });
 
+test("waits for a Sheet acknowledgement past the receiver's 20-second lock window", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  t.mock.method(AbortSignal, "timeout", milliseconds => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), milliseconds);
+    return controller.signal;
+  });
+  const handler = createLeadHandler({ getConfig: config, fetcher: async (_url, { body, signal }) => {
+    t.mock.timers.tick(20_001);
+    signal.throwIfAborted();
+    const { id } = JSON.parse(body);
+    return Response.json({ ok: true, requestId: id, id, prize: "usb" });
+  } });
+  const response = await post(handler, lead());
+  assert.equal(response.status, 201);
+});
+
 test("a duplicate phone receives a clear conflict instead of a new receipt", async () => {
   const s = sheet(p => Response.json({ ok: true, requestId: p.id, duplicate: true }));
   const response = await post(createLeadHandler({ getConfig: config, fetcher: s.fetcher }), lead());

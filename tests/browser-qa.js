@@ -4,18 +4,26 @@ async (page) => {
   const check = (condition, message) => { if (!condition) throw new Error(message); };
   const reports = [];
   const errors = [];
-  const KEYS = ["sain-erdenet-submitted-v2", "sain-erdenet-receipt-v2", "sain-erdenet-spun-v2"];
+  const clearRegistration = () => page.evaluate(() => {
+    for (const store of [localStorage, sessionStorage]) {
+      for (const key of Object.keys(store)) if (key.startsWith("sain-erdenet-")) store.removeItem(key);
+    }
+  });
+  const savedSubmission = requestId => page.evaluate(id => Object.keys(localStorage)
+    .filter(key => key.startsWith("sain-erdenet-"))
+    .map(key => JSON.parse(localStorage.getItem(key)))
+    .find(record => record?.requestId === id && record.phone !== undefined) ?? null, requestId);
   const stage = () => page.locator("#registration").getAttribute("data-stage");
   await page.setViewportSize({ width: 1440, height: 1000 });
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(base, { waitUntil: "networkidle" });
 
   // Old MEGA TEST DRIVE storage must never surface, and its personal data is purged.
-  await page.evaluate(keys => {
-    keys.forEach(key => localStorage.removeItem(key));
+  await clearRegistration();
+  await page.evaluate(() => {
     localStorage.setItem("sain-erdenet-receipt-v1", JSON.stringify({ receipt: "b".repeat(32), day: "2026-11-22", time: "10:00", expires: Date.now() + 86400_000 }));
     localStorage.setItem("sain-erdenet-submitted-v1", JSON.stringify({ name: "Old visitor", phone: "99112233" }));
-  }, KEYS);
+  });
   let mode = "failure", status = "pending", selectedDay = "2026-11-29", selectedTime = "17:00";
   const ids = [];
   await page.route("**/api/leads", async route => {
@@ -32,6 +40,12 @@ async (page) => {
   reports.push("v1 storage ignored and purged");
 
   const button = page.locator("#submit-button");
+  const submitOpening = async (name, phone) => {
+    await page.locator("#day-29").click();
+    await page.locator("#name").fill(name);
+    await page.locator("#phone").fill(phone);
+    await button.click();
+  };
   await button.click();
   check(await page.locator("[aria-invalid=true]").count() === 3, "Empty input must identify time, name and phone");
   check(await page.evaluate(() => document.activeElement.name === "time"), "Focus must move to the first missing time option");
@@ -53,17 +67,17 @@ async (page) => {
   await page.locator("#form-error").waitFor({ state: "visible" });
   check(await page.locator("#name").inputValue() === "Synthetic browser verification", "Server failure must preserve contact input");
   check(await button.isEnabled(), "Server failure must allow retry");
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("sain-erdenet-submitted-v2")));
+  const stored = await savedSubmission(ids[0]);
   check(stored?.consent === true && stored.requestId === ids[0], "Consented request ID must be stored before POST");
   reports.push("empty validation, 11.28/11.29 slots, keyboard order, failure preserves fields and submitted ID");
 
   mode = "pending";
   await page.reload({ waitUntil: "networkidle" });
   await page.locator("#result-panel").waitFor({ state: "visible" });
-  check(ids.length === 2 && ids[0] === ids[1], "Reload must retry the original request ID");
+  check(ids.length >= 2 && ids.every(id => id === ids[0]), "Reload must retry the original request ID");
   check(await stage() === "spin", "A received registration opens the spin stage");
   check((await page.locator("#result-title").textContent()) === "Хүсэлтийг хүлээн авлаа. Одоо хүрдээ эргүүлээрэй.", "Durable pending must not say registered");
-  check(await page.evaluate(() => localStorage.getItem("sain-erdenet-submitted-v2")) === null, "Server receipt must clear contact data from browser outbox");
+  check(await savedSubmission(ids[0]) === null, "Server receipt must clear contact data from browser outbox");
   status = "synced";
   await page.locator("#retry-button").click();
   await page.getByRole("heading", { name: "Та бүртгэгдлээ. Одоо хүрдээ эргүүлээрэй." }).waitFor();
@@ -107,8 +121,9 @@ async (page) => {
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.evaluate(() => localStorage.removeItem("sain-erdenet-spun-v2"));
+  await clearRegistration();
   await page.reload({ waitUntil: "networkidle" });
+  await submitOpening("Synthetic reduced motion verification", "00000001");
   await page.locator("#spin-button").waitFor({ state: "visible" });
   const quick = Date.now();
   await page.locator("#spin-button").click();
@@ -119,12 +134,9 @@ async (page) => {
 
   // While a lead stays pending, status polls must not move the wheel or replace the prize announcement.
   status = "pending";
-  await page.evaluate(() => {
-    localStorage.removeItem("sain-erdenet-spun-v2");
-    const saved = JSON.parse(localStorage.getItem("sain-erdenet-receipt-v2"));
-    localStorage.setItem("sain-erdenet-receipt-v2", JSON.stringify({ ...saved, status: "pending" }));
-  });
+  await clearRegistration();
   await page.reload({ waitUntil: "networkidle" });
+  await submitOpening("Synthetic pending verification", "00000002");
   await page.locator("#spin-button").waitFor({ state: "visible" });
   await page.locator("#spin-button").click();
   await page.waitForFunction(() => document.querySelector("#registration").dataset.stage === "prize", null, { timeout: 7000 });
@@ -141,7 +153,7 @@ async (page) => {
   check((await snapshot()).transform === reloaded.transform, "Reloading while pending must not redraw the wheel twice");
   reports.push("pending polls leave the revealed wheel and announcement alone");
 
-  await page.evaluate(keys => keys.forEach(key => localStorage.removeItem(key)), KEYS);
+  await clearRegistration();
   await page.unroute("**/api/leads"); await page.unroute("**/api/leads/*");
   await page.reload({ waitUntil: "networkidle" });
   await page.evaluate(() => document.fonts.ready);

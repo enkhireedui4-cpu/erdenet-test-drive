@@ -1,4 +1,4 @@
-import { validateLead, EVENT_SLOTS, EVENT_DAYS, prizeLabel } from "/lead-validation.js";
+import { validateLead, EVENT_SLOTS, EVENT_DAYS, prizeLabel, UUID } from "/lead-validation.js";
 
 const form = document.querySelector("#lead-form");
 const fields = { name: form.elements.name, phone: form.elements.phone };
@@ -15,10 +15,15 @@ const slices = [...rotor.querySelectorAll(".wheel-slice")];
 const OUTBOX_KEY = "sain-erdenet-submitted-v2";
 const RECEIPT_KEY = "sain-erdenet-receipt-v2";
 const SPUN_KEY = "sain-erdenet-spun-v2";
+const REQUEST_PREFIX = "sain-erdenet-request-v3:";
+const ACTIVE_REQUEST_KEY = "sain-erdenet-active-v3";
+const FIRST_RETRY_DELAY = 2000;
 const LEGACY_KEYS = ["sain-erdenet-submitted-v1", "sain-erdenet-receipt-v1"];
 const PRIZE_BODY = "11.29-ний 17:00 цагаас Эрдэнэт шоурумын нээлтэд хүрэлцэн ирж бэлгээ аваарай. Бүртгүүлсэн утасны дугаараа хэлэхэд хангалттай.";
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 let busy = false, pollTimer, receipt, submitted, outboxAvailable = true, resultMode = null, spinning = false;
+let activeRequestId = readStored(ACTIVE_REQUEST_KEY, true);
+let retryTimer, retryDelay = FIRST_RETRY_DELAY, pageActive = true, checkingStatus = false;
 let acceptedSlot = { day: "2026-11-28", time: "" }, acceptedPrize = "";
 const chosenTimes = { "2026-11-28": "", "2026-11-29": "17:00" };
 
@@ -49,9 +54,65 @@ function renderTimes(day) {
 }
 form.addEventListener("change", event => { if (event.target.name === "day") renderTimes(event.target.value); else if (event.target.name === "time") { chosenTimes[form.elements.day.value] = event.target.value; timeError(""); updateSummary(); } });
 
-function readStored(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
-function saveStored(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } }
+function readStored(key, perTab = false) { try { return JSON.parse((perTab ? sessionStorage : localStorage).getItem(key)); } catch { return null; } }
+function saveStored(key, value, perTab = false) { try { (perTab ? sessionStorage : localStorage).setItem(key, JSON.stringify(value)); return true; } catch { return false; } }
 function removeStored(key) { try { localStorage.removeItem(key); } catch { /* A disabled browser store does not prevent a server write. */ } }
+
+function selectRequest(id) {
+  activeRequestId = id;
+  saveStored(ACTIVE_REQUEST_KEY, id, true);
+}
+function readRequest(id) {
+  if (!UUID.test(id ?? "")) return null;
+  const key = REQUEST_PREFIX + id;
+  const saved = readStored(key);
+  if (saved?.expires > Date.now()) return saved;
+  if (saved) removeStored(key);
+  return null;
+}
+function isSavedSubmission(value) {
+  return value?.expires > Date.now() && validateLead(value).ok;
+}
+function isSavedReceipt(value) {
+  return value?.expires > Date.now() && /^[A-Za-z0-9_-]{32}$/.test(value.receipt)
+    && ["pending", "synced"].includes(value.status);
+}
+function restoreLegacySubmission() {
+  const legacy = readStored(OUTBOX_KEY);
+  if (!isSavedSubmission(legacy)) {
+    if (legacy) removeStored(OUTBOX_KEY);
+    return null;
+  }
+  // Keep the original ID when moving a submission created by the previous version.
+  const existing = readRequest(legacy.requestId);
+  if (!existing && !saveStored(REQUEST_PREFIX + legacy.requestId, legacy)) return legacy;
+  removeStored(OUTBOX_KEY);
+  return isSavedReceipt(existing) ? null : existing ?? legacy;
+}
+function savedRequests() {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+    return keys.filter(key => key?.startsWith(REQUEST_PREFIX)).map(key => readRequest(key.slice(REQUEST_PREFIX.length))).filter(Boolean);
+  } catch { return []; }
+}
+function forgetSubmission(id) {
+  if (!readRequest(id)?.receipt) removeStored(REQUEST_PREFIX + id);
+  if (readStored(OUTBOX_KEY)?.requestId === id) removeStored(OUTBOX_KEY);
+}
+function sameRegistration(previous, input) {
+  return previous && previous.name === input.name && previous.phone === input.phone && previous.day === input.day && previous.time === input.time;
+}
+function saveReceipt(status, id = activeRequestId) {
+  const existing = readRequest(id);
+  const latest = readStored(RECEIPT_KEY);
+  const previous = existing?.receipt === receipt ? existing : latest?.receipt === receipt ? latest : null;
+  if (previous?.status === "synced" && status === "pending" && acceptResponse(previous)) status = "synced";
+  const expires = previous?.expires ?? Date.now() + 14 * 86400_000;
+  const saved = { requestId: id, receipt, ...acceptedSlot, prize: acceptedPrize, status, expires, revealed: previous?.revealed === true };
+  if (id && !saveStored(REQUEST_PREFIX + id, saved)) removeStored(REQUEST_PREFIX + id);
+  if (latest?.receipt === receipt || submitted) saveStored(RECEIPT_KEY, saved);
+  return status;
+}
 function error(message) { formError.textContent = message; formError.hidden = !message; live.textContent = message || ""; }
 function fieldError(name, message) {
   const target = document.querySelector(`#${name}-error`);
@@ -68,7 +129,12 @@ function loading(value) {
 }
 
 // The wheel only reveals the prize the server drew; it never decides one.
-function spunPrize() { const spun = readStored(SPUN_KEY); return spun && spun.receipt === receipt && prizeLabel(spun.prize) ? spun.prize : ""; }
+function spunPrize() {
+  const saved = readRequest(activeRequestId);
+  if (saved?.receipt === receipt && saved?.revealed && prizeLabel(saved.prize)) return saved.prize;
+  const spun = readStored(SPUN_KEY);
+  return spun?.receipt === receipt && prizeLabel(spun.prize) ? spun.prize : "";
+}
 function landingAngle(prizeId, turns = 0, jitter = 0, randomSlice = true) {
   // Equal slices run clockwise from 12 o'clock; the pointer stays fixed at 0°.
   const sliceAngle = 360 / slices.length;
@@ -118,7 +184,10 @@ spinButton.addEventListener("click", async () => {
   spinning = true; spinButton.disabled = true;
   live.textContent = "Хүрд эргэж байна.";
   await spinTo(acceptedPrize);
-  saveStored(SPUN_KEY, { receipt, prize: acceptedPrize });
+  const saved = readRequest(activeRequestId);
+  if (saved?.receipt !== receipt || !saveStored(REQUEST_PREFIX + activeRequestId, { ...saved, revealed: true })) {
+    saveStored(SPUN_KEY, { receipt, prize: acceptedPrize });
+  }
   spinning = false;
   showPrize(acceptedPrize, { animate: true });
 });
@@ -152,7 +221,7 @@ function showResult(status, focus = true) {
   if (status !== previousStatus) live.textContent = `${title} ${message}`.trim();
   requestAnimationFrame(updateSticky);
   if (focus) result.focus({ preventScroll: true });
-  if (synced) { clearTimeout(pollTimer); removeStored(OUTBOX_KEY); submitted = null; form.reset(); }
+  if (synced) { clearTimeout(pollTimer); form.reset(); }
 }
 function acceptResponse(body) {
   if (!["pending", "synced"].includes(body?.status) || !EVENT_SLOTS[body.day]?.includes(body.time) || !(prizeLabel(body.prize) || (body.status === "pending" && body.prize === "pending"))) return false;
@@ -160,36 +229,62 @@ function acceptResponse(body) {
   acceptedPrize = body.prize;
   return true;
 }
+function restoreReceipt(saved, focus = false) {
+  clearTimeout(retryTimer);
+  submitted = null;
+  receipt = saved.receipt;
+  if (EVENT_SLOTS[saved.day]?.includes(saved.time)) acceptedSlot = { day: saved.day, time: saved.time };
+  acceptedPrize = saved.status === "pending" ? "pending" : prizeLabel(saved.prize) ? saved.prize : "";
+  showResult(saved.status, focus);
+  if (saved.status === "pending") void checkStatus();
+}
 async function checkStatus(focus = false) {
-  if (!receipt) return;
+  if (!receipt || resultMode !== "pending" || !pageActive || checkingStatus) return;
   clearTimeout(pollTimer);
+  checkingStatus = true;
   try {
     const response = await fetch(`/api/leads/${receipt}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
     if (response.ok) {
       const body = await response.json();
       if (acceptResponse(body)) {
-        const saved = readStored(RECEIPT_KEY);
-        if (saved?.receipt === receipt) saveStored(RECEIPT_KEY, { ...saved, ...acceptedSlot, prize: acceptedPrize, status: body.status });
-        showResult(body.status, focus);
-        if (body.status === "pending") pollTimer = setTimeout(() => checkStatus(), 10_000);
+        const status = saveReceipt(body.status);
+        showResult(status, focus);
+        if (status === "pending" && pageActive) pollTimer = setTimeout(() => checkStatus(), 10_000);
         return;
       }
     }
   } catch { /* The server retains an acknowledged pending lead during a browser outage. */ }
+  finally { checkingStatus = false; }
+  if (!pageActive) return;
   retryButton.hidden = false;
   const description = document.querySelector("#result-description");
   description.hidden = false;
   description.textContent = "Баталгаажуулалтыг түр шалгаж чадсангүй.\nХолболтоо шалгаад дахин оролдоорой.";
   pollTimer = setTimeout(() => checkStatus(), 20_000);
 }
+function scheduleRetry(requestId) {
+  if (!pageActive || !navigator.onLine || submitted?.requestId !== requestId) return;
+  retryTimer = setTimeout(() => {
+    if (submitted?.requestId === requestId && submitted.expires > Date.now()) resumeDelivery();
+  }, retryDelay);
+  retryDelay = Math.min(retryDelay * 2, 60_000);
+}
 async function send(payload, focus = true) {
-  if (busy) return;
+  if (busy || !pageActive) return;
+  clearTimeout(retryTimer);
+  const saved = readRequest(payload.requestId);
+  if (isSavedReceipt(saved)) { restoreReceipt(saved, focus); return; }
   loading(true); error("");
+  let retryable = true;
   try {
-    const response = await fetch("/api/leads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(20_000), cache: "no-store" });
+    const { expires, ...input } = payload;
+    const response = await fetch("/api/leads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input), signal: AbortSignal.timeout(35_000), cache: "no-store" });
+    retryable = response.ok || response.status === 408 || response.status === 429 || response.status >= 500;
     const body = await response.json();
     if (response.status === 409 && body.code === "duplicate_phone") {
-      removeStored(OUTBOX_KEY); submitted = null;
+      // A stale duplicate response from another tab must never clear a stored receipt.
+      forgetSubmission(payload.requestId);
+      submitted = null;
       fieldError("phone", "Энэ дугаар бүртгэгдсэн байна.");
       error("Энэ дугаар бүртгэгдсэн байна.");
       if (focus) fields.phone.focus();
@@ -200,13 +295,18 @@ async function send(payload, focus = true) {
       throw new Error(response.status === 429 ? "Түр хүлээгээд дахин оролдоно уу." : "Хүсэлтийг баталгаажуулж чадсангүй. Дахин оролдоорой.");
     }
     receipt = body.receipt;
-    saveStored(RECEIPT_KEY, { receipt, ...acceptedSlot, prize: acceptedPrize, status: body.status, expires: Date.now() + 14 * 86400_000 });
-    removeStored(OUTBOX_KEY); submitted = null;
-    showResult(body.status, focus);
-    if (body.status === "pending") pollTimer = setTimeout(() => checkStatus(), 5000);
+    const status = saveReceipt(body.status, payload.requestId);
+    if (readStored(OUTBOX_KEY)?.requestId === payload.requestId) removeStored(OUTBOX_KEY);
+    submitted = null;
+    showResult(status, focus);
+    if (status === "pending" && pageActive) pollTimer = setTimeout(() => checkStatus(), 5000);
   } catch (failure) {
     const warning = outboxAvailable ? "" : " Энэ хөтөч түр хадгалах боломжгүй байна. Амжилттай илгээх хүртэл хуудсаа бүү хаагаарай.";
-    error((navigator.onLine ? (failure.name === "TimeoutError" || failure.name === "TypeError" ? "Холболт тасарлаа. Мэдээллээ дахин оруулахгүйгээр дахин илгээнэ үү." : failure.message) : "Интернэт холболт алга. Холбогдоход таны хүсэлтийг дахин илгээнэ.") + warning);
+    if (retryable) scheduleRetry(payload.requestId);
+    const message = navigator.onLine
+      ? retryable ? "Түр саатлаа. Таны хүсэлтийг автоматаар дахин илгээнэ." : failure.message
+      : "Интернэт холболт алга. Холбогдоход таны хүсэлтийг дахин илгээнэ.";
+    error(message + warning);
   } finally { loading(false); }
 }
 
@@ -215,40 +315,64 @@ form.addEventListener("submit", event => {
   if (busy) return;
   const params = new URLSearchParams(location.search);
   const contact = { name: fields.name.value, phone: fields.phone.value, day: form.elements.day.value, time: form.elements.time?.value || "", consent: true, website: form.elements.website.value, utmSource: params.get("utm_source") || "", utmCampaign: params.get("utm_campaign") || "" };
-  const same = submitted && submitted.name === contact.name && submitted.phone === contact.phone && submitted.day === contact.day && submitted.time === contact.time && submitted.consent === contact.consent;
-  const input = { ...contact, requestId: same ? submitted.requestId : crypto.randomUUID() };
-  const validated = validateLead(input);
+  const validated = validateLead({ ...contact, requestId: crypto.randomUUID() });
   for (const name of Object.keys(fields)) fieldError(name, validated.errors?.[name]);
   timeError(validated.errors?.time);
   error(validated.errors?.form || "");
   if (!validated.ok) { if (validated.errors.time) form.querySelector('[name="time"]').focus(); else { const first = Object.keys(fields).find(name => validated.errors[name]); if (first) fields[first].focus(); } return; }
+  const input = validated.data;
+  const previous = submitted?.expires > Date.now() ? validateLead(submitted).data : null;
+  const same = sameRegistration(previous, input) ? previous : savedRequests().find(record => isSavedSubmission(record) && sameRegistration(record, input));
+  if (same) input.requestId = same.requestId;
+  if (previous && previous.requestId !== input.requestId) forgetSubmission(previous.requestId);
+  selectRequest(input.requestId);
+  const saved = readRequest(input.requestId);
+  if (isSavedReceipt(saved)) { restoreReceipt(saved, true); return; }
   submitted = { ...input, expires: Date.now() + 7 * 86400_000 };
   // Persist only after the visitor explicitly submits a valid, consented payload.
-  outboxAvailable = saveStored(OUTBOX_KEY, submitted);
-  void send(input);
+  outboxAvailable = saveStored(REQUEST_PREFIX + submitted.requestId, submitted);
+  retryDelay = FIRST_RETRY_DELAY;
+  void send(submitted);
 });
 for (const [name, field] of Object.entries(fields)) field.addEventListener("input", () => fieldError(name, ""));
 retryButton.addEventListener("click", () => { retryButton.disabled = true; void checkStatus(true).finally(() => { retryButton.disabled = false; }); });
-window.addEventListener("online", () => { if (receipt) void checkStatus(); else if (submitted && !busy) void send(submitted, false); });
-window.addEventListener("pagehide", () => clearTimeout(pollTimer));
-window.addEventListener("pageshow", event => { if (event.persisted && receipt) void checkStatus(); });
+function resumeDelivery() {
+  if (!navigator.onLine || !pageActive) return;
+  if (resultMode === "pending") void checkStatus();
+  else if (!resultMode && submitted?.expires > Date.now()) void send(submitted, false);
+}
+window.addEventListener("online", resumeDelivery);
+window.addEventListener("pagehide", () => {
+  pageActive = false;
+  clearTimeout(retryTimer);
+  clearTimeout(pollTimer);
+});
+window.addEventListener("pageshow", event => {
+  pageActive = true;
+  if (event.persisted) resumeDelivery();
+});
 
 // Data from the earlier MEGA TEST DRIVE page (other dates) never carries over.
 LEGACY_KEYS.forEach(removeStored);
-const savedReceipt = readStored(RECEIPT_KEY);
-const savedSubmission = readStored(OUTBOX_KEY);
-if (savedReceipt && savedReceipt.expires > Date.now() && /^[A-Za-z0-9_-]{32}$/.test(savedReceipt.receipt)) {
-  receipt = savedReceipt.receipt;
-  if (EVENT_SLOTS[savedReceipt.day]?.includes(savedReceipt.time)) acceptedSlot = { day: savedReceipt.day, time: savedReceipt.time };
-  if (prizeLabel(savedReceipt.prize)) acceptedPrize = savedReceipt.prize;
-  // A confirmed registration is final; only a pending one keeps asking the server.
-  if (savedReceipt.status === "synced") showResult("synced", false);
-  else { acceptedPrize = "pending"; showResult("pending", false); void checkStatus(); }
-} else if (savedSubmission?.expires > Date.now() && validateLead(savedSubmission).ok) {
+// Prune expired records even when the current tab already has its own receipt.
+savedRequests();
+const activeRequest = readRequest(activeRequestId);
+const savedSubmission = isSavedSubmission(activeRequest) ? activeRequest : isSavedReceipt(activeRequest) ? null : restoreLegacySubmission();
+const legacyReceipt = readStored(RECEIPT_KEY);
+const savedReceipt = isSavedReceipt(activeRequest) ? activeRequest : savedSubmission || legacyReceipt?.requestId ? null : legacyReceipt;
+if (isSavedReceipt(savedReceipt)) {
+  selectRequest(savedReceipt === activeRequest ? activeRequestId : null);
+  restoreReceipt(savedReceipt);
+} else if (savedSubmission) {
   submitted = savedSubmission;
+  selectRequest(submitted.requestId);
   form.querySelector(`[name="day"][value="${submitted.day}"]`).checked = true;
   chosenTimes[submitted.day] = submitted.time; renderTimes(submitted.day);
   fields.name.value = submitted.name; fields.phone.value = submitted.phone;
-  if (navigator.onLine) void send(submitted, false);
+  if (navigator.onLine) resumeDelivery();
   else error("Илгээж байсан хүсэлт байна. Холболт сэргэхэд дахин илгээнэ.");
-} else { removeStored(OUTBOX_KEY); removeStored(RECEIPT_KEY); removeStored(SPUN_KEY); }
+} else {
+  selectRequest(null);
+  if (!isSavedReceipt(readStored(RECEIPT_KEY))) removeStored(RECEIPT_KEY);
+  removeStored(SPUN_KEY);
+}

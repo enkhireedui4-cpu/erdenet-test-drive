@@ -1,9 +1,14 @@
 async (page) => {
   const check = (value, message) => { if (!value) throw new Error(message); };
   const errors = [];
+  const clearRegistration = () => page.evaluate(() => {
+    for (const store of [localStorage, sessionStorage]) {
+      for (const key of Object.keys(store)) if (key.startsWith("sain-erdenet-")) store.removeItem(key);
+    }
+  });
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("http://localhost:3210/", { waitUntil: "networkidle" });
-  await page.evaluate(() => localStorage.clear());
+  await clearRegistration();
   await page.reload({ waitUntil: "networkidle" });
   const phones = await page.locator('a[href^="tel:"]').evaluateAll(links => links.map(link => link.getAttribute("href")));
   check(phones.length === 4 && phones.every(phone => phone === "tel:+97688088505"), "All contact links dial the new number");
@@ -26,7 +31,7 @@ async (page) => {
   check(errors.length === 0, errors.join("\n"));
   await page.screenshot({ path: "C:/Users/user/OneDrive/Desktop/erdenet-test-drive/test-results/no-award.png", fullPage: true });
   await page.unroute("**/api/leads");
-  await page.evaluate(() => localStorage.clear());
+  await clearRegistration();
   await page.reload({ waitUntil: "networkidle" });
   let ready = false;
   const pendingResult = () => ({ status: ready ? "synced" : "pending", receipt: "w".repeat(32), day: "2026-11-29", time: "17:00", prize: ready ? "usb" : "pending" });
@@ -49,6 +54,6 @@ async (page) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.unroute("**/api/leads");
   await page.unroute("**/api/leads/*");
-  await page.evaluate(() => localStorage.clear());
+  await clearRegistration();
   return { passed: ["updated contact links and programme", "USB and general gift remain visible", "stock exhaustion confirms registration without a spin", "no-award result survives reload", "Sheet outage hides the spin until the authoritative USB award arrives", "zero runtime errors"], writes: "All registration responses mocked; no live Sheet writes" };
 }
