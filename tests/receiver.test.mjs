@@ -127,21 +127,23 @@ test("receiver returns the stored prize when the same registration arrives again
   assert.equal(r.rows.length, 2);
 });
 
-test("receiver enforces all four quotas, never awards the general gift and accepts registrations after exhaustion", () => {
+test("receiver enforces all four quotas and keeps accepting registrations from the 251st", () => {
   const r = receiver();
   const counts = {};
-  for (let i = 0; i < 112; i++) {
+  for (let i = 0; i < 252; i++) {
     const lead = { ...data(), phone: `+976${String(i).padStart(8, "0")}`, prize: "generalGift" };
     const result = r.post(lead);
     assert.equal(result.ok, true);
+    assert.equal(result.prize === "none", i >= 250, `registration ${i + 1}`);
     counts[result.prize] = (counts[result.prize] || 0) + 1;
     assert.equal(r.post(lead).prize, result.prize);
   }
-  assert.deepEqual(counts, { umbrella: 30, usb: 10, notebook: 20, gift: 50, none: 2 });
-  assert.equal(r.rows.length, 113);
-  assert.equal(r.rows[31][11], "'USB багц");
-  assert.equal(r.rows[41][11], "'Хуванцар дугаар бичигч");
-  assert.equal(r.rows[61][11], "'Дугаар бичигч");
+  assert.deepEqual(counts, { umbrella: 50, usb: 25, notebook: 20, gift: 155, none: 2 });
+  assert.equal(r.rows.length, 253);
+  assert.equal(r.rows[51][11], "'USB багц");
+  assert.equal(r.rows[76][11], "'Хуванцар дугаар бичигч");
+  assert.equal(r.rows[96][11], "'Дугаар бичигч");
+  assert.equal(r.rows[251][11], "'Бэлэг олгогдоогүй");
 });
 
 test("receiver ignores the two existing test leads and counts the real lead's legacy gift", () => {
@@ -150,12 +152,12 @@ test("receiver ignores the two existing test leads and counts the real lead's le
   const labels = ["Тэмдэглэлийн дэвтэр", "Борооны шүхэр", "Гарын бэлэг"];
   ids.forEach((id, i) => r.rows.push([id, "2026-11-17", i < 2 ? "test" : "Мөнхдэлгэр", `+9769000000${i}`, "erdenet-opening-2026-11", "2026-11-28", "12:00", "erdenet-web", "", "", "consent", labels[i]]));
   const counts = {};
-  for (let i = 0; i < 110; i++) {
+  for (let i = 0; i < 250; i++) {
     const result = r.post({ ...data(), phone: `+976${String(i).padStart(8, "0")}` });
     assert.equal(result.ok, true);
     counts[result.prize] = (counts[result.prize] || 0) + 1;
   }
-  assert.deepEqual(counts, { umbrella: 30, usb: 10, notebook: 20, gift: 49, none: 1 });
+  assert.deepEqual(counts, { umbrella: 50, usb: 25, notebook: 20, gift: 154, none: 1 });
   assert.equal(r.rows[3][11], "'Дугаар бичигч", "the real lead gets a concrete gift label");
   assert.equal(r.rows[1][11], "Тэмдэглэлийн дэвтэр", "test rows remain unchanged");
   assert.equal(r.rows[2][11], "Борооны шүхэр", "test rows remain unchanged");

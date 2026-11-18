@@ -8,6 +8,7 @@ async (page) => {
   const phones = await page.locator('a[href^="tel:"]').evaluateAll(links => links.map(link => link.getAttribute("href")));
   check(phones.length === 4 && phones.every(phone => phone === "tel:+97688088505"), "All contact links dial the new number");
   check((await page.locator(".program-list").textContent()).includes("Урлагийн номер"), "The programme includes the performance");
+  check((await page.locator(".program-list").textContent()).includes("QR уншуулж бүртгүүлсэн эхний 250 хүн гарын бэлэгтэй"), "The programme advertises gifts for the first 250 QR registrations");
   check(await page.locator('[data-prize="usb"]').count() === 2, "USB stays visible on the wheel");
   check(await page.locator('[data-prize="generalGift"]').count() === 2, "The general gift stays visible on the wheel");
   await page.route("**/api/leads", route => route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ status: "synced", receipt: "z".repeat(32), day: "2026-11-29", time: "17:00", prize: "none" }) }));
@@ -19,6 +20,7 @@ async (page) => {
   check(await page.locator("#spin-button").isHidden(), "A registration after stock exhaustion must never offer an unwinnable spin");
   check((await page.locator("#result-title").textContent()) === "Та бүртгэгдлээ.", "A no-award registration is confirmed");
   check((await page.locator("#prize-title").textContent()) === "Бэлгийн нөөц дууссан", "The exhausted stock is explained");
+  check((await page.locator("#prize-body").textContent()).includes("Та эвентэд бүртгэгдсэн"), "The visitor is invited to attend after a no-award registration");
   await page.reload({ waitUntil: "networkidle" });
   check(await page.locator("#spin-button").isHidden() && await page.locator("#prize-card").isVisible(), "Reload restores the registration without a spin");
   check(errors.length === 0, errors.join("\n"));

@@ -7,7 +7,7 @@ var ERDENET_EVENT = 'erdenet-opening-2026-11';
 var ERDENET_HEADERS = ['Бүртгэлийн ID', 'Бүртгэсэн огноо', 'Нэр', 'Утас', 'Эвент', 'Өдөр', 'Цаг', 'Эх сурвалж', 'UTM source', 'UTM campaign', 'Зөвшөөрөл', 'Бэлэг'];
 // Mirrors PRIZES in public/lead-validation.js; the Sheet shows the label.
 var ERDENET_PRIZES = { umbrella: 'Шүхэр', usb: 'USB багц', notebook: 'Хуванцар дугаар бичигч', gift: 'Дугаар бичигч', generalGift: 'Гарын бэлэг', none: 'Бэлэг олгогдоогүй' };
-var ERDENET_STOCK = { umbrella: 30, usb: 10, notebook: 20, gift: 50, generalGift: 0 };
+var ERDENET_STOCK = { umbrella: 50, usb: 25, notebook: 20, gift: 155, generalGift: 0 };
 var ERDENET_TEST_IDS = ['9c4a6cb0-16ae-4c30-b539-f7f92a3443c5', 'fbdea9e6-01c6-4a01-9f4f-544de11b2bc3'];
 
 function drawRemainingPrize(remaining) {

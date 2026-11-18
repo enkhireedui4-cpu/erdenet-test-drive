@@ -106,7 +106,7 @@ function showPrize(prizeId, { animate = false } = {}) {
   prizeCard.hidden = false;
   document.querySelector("#result-title").textContent = stageTitle(resultMode, "prize");
   document.querySelector("#prize-title").textContent = noAward ? label : `Таны бэлэг: ${label}`;
-  document.querySelector("#prize-body").textContent = noAward ? "Эхний 110 хүний бэлгийн нөөц дууссан байна. Та эвентэд бүртгэгдсэн тул сонгосон өдөр, цагтаа хүрэлцэн ирээрэй." : PRIZE_BODY;
+  document.querySelector("#prize-body").textContent = noAward ? "Та эвентэд бүртгэгдсэн тул сонгосон өдөр, цагтаа хүрэлцэн ирээрэй." : PRIZE_BODY;
   document.querySelector(".prize-note").hidden = noAward;
   if (!animate) return;
   prizeCard.classList.remove("is-revealed"); void prizeCard.offsetWidth; prizeCard.classList.add("is-revealed");
