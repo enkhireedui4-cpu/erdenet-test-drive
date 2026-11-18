@@ -5,8 +5,9 @@ import vm from "node:vm";
 import { randomUUID } from "node:crypto";
 
 const LEGACY_HEADERS = ["Бүртгэлийн ID", "Бүртгэсэн огноо", "Нэр", "Утас", "Эвент", "Өдөр", "Цаг", "Эх сурвалж", "UTM source", "UTM campaign", "Зөвшөөрөл"];
+const TEST_SECRET = "test-secret-".repeat(3);
 
-function receiver(initialMaxRows = 1000, { legacyHeaders = false } = {}) {
+function receiver(initialMaxRows = 1000, { legacyHeaders = false, secret = TEST_SECRET, editable = true } = {}) {
   const rows = [legacyHeaders ? [...LEGACY_HEADERS] : [...LEGACY_HEADERS, "Бэлэг"]];
   let locked = false, failWrite = false, maxRows = initialMaxRows;
   const sheet = {
@@ -14,6 +15,7 @@ function receiver(initialMaxRows = 1000, { legacyHeaders = false } = {}) {
     getMaxRows: () => maxRows,
     insertRowsAfter: (after, count) => { assert.equal(after, maxRows); maxRows += count; },
     getRange: (row, column, height = 1, width = 1) => ({
+      canEdit: () => editable,
       getValues: () => Array.from({ length: height }, (_, i) => rows[row - 1 + i]?.slice(column - 1, column - 1 + width) ?? Array(width).fill("")),
       setNumberFormat() { return this; },
       setValues(values) { if (failWrite) throw new Error("quota"); if (row + values.length - 1 > maxRows) throw new Error("Rows out of bounds"); values.forEach((r, i) => { const target = rows[row - 1 + i] ?? []; r.forEach((value, j) => { target[column - 1 + j] = value; }); rows[row - 1 + i] = target; }); return this; },
@@ -26,12 +28,22 @@ function receiver(initialMaxRows = 1000, { legacyHeaders = false } = {}) {
     SpreadsheetApp: { openById: id => { assert.equal(id, "1argV8PktHaKNvW5_iK0UICcwOkHGDJtEq__PwSOGs2k"); return { getSheetByName: name => { assert.equal(name, "Sheet1"); return sheet; } }; }, flush() { if (failWrite) throw new Error("quota"); } },
     Utilities: { formatDate: () => "2026-11-16 12:00:00" },
   });
-  const source = readFileSync(new URL("../apps-script/Code.gs.template", import.meta.url), "utf8").replaceAll("__WEBHOOK_SECRET__", "test-secret");
+  const source = readFileSync(new URL("../apps-script/Code.gs.template", import.meta.url), "utf8").replaceAll("__WEBHOOK_SECRET__", secret);
   vm.runInContext(source, context);
-  return { rows, post(data) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(data) } }).text); }, set failWrite(value) { failWrite = value; } };
+  return { rows, verify: () => context.verifyErdenetSheet(), post(data) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(data) } }).text); }, set failWrite(value) { failWrite = value; } };
 }
 
-const data = () => ({ id: randomUUID(), secret: "test-secret", name: "Synthetic verification", phone: "+97600000000", event: "erdenet-opening-2026-11", day: "2026-11-28", time: "10:00", consent: true, consentVersion: "erdenet-opening-v1", prize: "umbrella", createdAt: new Date().toISOString(), consentAt: new Date().toISOString(), source: "erdenet-web" });
+const data = () => ({ id: randomUUID(), secret: TEST_SECRET, name: "Synthetic verification", phone: "+97600000000", event: "erdenet-opening-2026-11", day: "2026-11-28", time: "10:00", consent: true, consentVersion: "erdenet-opening-v1", prize: "umbrella", createdAt: new Date().toISOString(), consentAt: new Date().toISOString(), source: "erdenet-web" });
+
+test("deployment checks the webhook key and Sheet edit access without adding a lead", () => {
+  const ready = receiver(1000, { legacyHeaders: true });
+  assert.equal(ready.verify(), true);
+  assert.equal(ready.rows.length, 1);
+  assert.throws(() => receiver(1000, { secret: "" }).verify(), /webhook secret/i);
+  assert.throws(() => receiver(1000, { editable: false }).verify(), /edit permission/i);
+  ready.rows[0][3] = "Wrong column";
+  assert.throws(() => ready.verify(), /headers/i);
+});
 
 test("receiver authenticates writes, deduplicates retries and safely stores literal cell text", () => {
   const f = receiver();

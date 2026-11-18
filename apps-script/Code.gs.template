@@ -25,16 +25,49 @@ function jsonOutput(value) {
   return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function doGet() { return jsonOutput({ ok: true, service: 'erdenet-test-drive' }); }
+function doGet() { return jsonOutput({ ok: true, service: 'erdenet-test-drive', receiverVersion: 2 }); }
+
+function hasWebhookSecret() { return /^[A-Za-z0-9_-]{32,}$/.test(ERDENET_SECRET); }
+
+function hasLeadHeaders(headers) {
+  var last = ERDENET_HEADERS.length - 1;
+  return ERDENET_HEADERS.every(function(value, index) {
+    return headers[index] === value || (index === last && String(headers[index] || '') === '');
+  });
+}
+
+// Run in the Apps Script editor as the account that deploys the web app.
+function verifyErdenetSheet() {
+  if (!hasWebhookSecret()) throw new Error('Webhook secret is missing. Use the prepared private/Code.gs file.');
+  var sheet = SpreadsheetApp.openById(ERDENET_SHEET_ID).getSheetByName(ERDENET_TAB);
+  if (!sheet) throw new Error('The target spreadsheet has no Sheet1 tab.');
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 0 && !hasLeadHeaders(sheet.getRange(1, 1, 1, ERDENET_HEADERS.length).getValues()[0])) {
+    throw new Error('Sheet1 headers do not match the registration columns.');
+  }
+  var nextRow = Math.min(lastRow + 1, sheet.getMaxRows());
+  if (!sheet.getRange(nextRow, 1, 1, ERDENET_HEADERS.length).canEdit()) {
+    throw new Error('The deploying account needs edit permission on Sheet1.');
+  }
+  console.info('Erdenet receiver verified Sheet1 edit access.');
+  return true;
+}
+
+function rejectLead(reason) {
+  console.warn('Erdenet receiver: ' + reason);
+  return jsonOutput({ ok: false });
+}
 
 function literalText(value) { return "'" + String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200); }
 
 function doPost(e) {
   var lock;
+  var stage = 'parse request';
   try {
     if (!e || !e.postData || e.postData.contents.length > 4096) return jsonOutput({ ok: false });
     var data = JSON.parse(e.postData.contents);
-    if (!data || data.secret !== ERDENET_SECRET || ERDENET_SECRET.indexOf('__') === 0) return jsonOutput({ ok: false });
+    if (!hasWebhookSecret()) return rejectLead('webhook secret not configured');
+    if (!data || data.secret !== ERDENET_SECRET) return rejectLead('webhook secret mismatch');
     var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (typeof data.id !== 'string' || !uuid.test(data.id) || data.event !== ERDENET_EVENT || data.consent !== true || data.consentVersion !== 'erdenet-opening-v1') return jsonOutput({ ok: false });
     if (typeof data.name !== 'string' || data.name.trim().length < 2 || data.name.length > 80 || /[\u0000-\u001f\u007f]/.test(data.name)) return jsonOutput({ ok: false });
@@ -43,20 +76,22 @@ function doPost(e) {
     if (!Object.prototype.hasOwnProperty.call(slots, data.day) || slots[data.day].indexOf(data.time) < 0) return jsonOutput({ ok: false });
     if (typeof data.prize !== 'string' || !Object.prototype.hasOwnProperty.call(ERDENET_PRIZES, data.prize)) return jsonOutput({ ok: false });
     if (!Number.isFinite(Date.parse(data.createdAt)) || !Number.isFinite(Date.parse(data.consentAt))) return jsonOutput({ ok: false });
+    stage = 'acquire Sheet lock';
     lock = LockService.getScriptLock();
-    if (!lock.tryLock(20000)) return jsonOutput({ ok: false });
+    if (!lock.tryLock(20000)) return rejectLead('Sheet lock timed out');
+    stage = 'open Sheet1';
     var sheet = SpreadsheetApp.openById(ERDENET_SHEET_ID).getSheetByName(ERDENET_TAB);
-    if (!sheet) return jsonOutput({ ok: false });
+    if (!sheet) return rejectLead('Sheet1 tab missing');
+    stage = 'read Sheet1 headers';
     if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, ERDENET_HEADERS.length).setValues([ERDENET_HEADERS]);
     var headers = sheet.getRange(1, 1, 1, ERDENET_HEADERS.length).getValues()[0];
     // A sheet prepared for the earlier event has 11 headers: add the prize column once.
     var last = ERDENET_HEADERS.length - 1;
-    var legacy = headers.slice(0, last).every(function(value, index) { return value === ERDENET_HEADERS[index]; }) && String(headers[last] || '') === '';
-    if (legacy) {
+    if (!hasLeadHeaders(headers)) return rejectLead('Sheet1 headers do not match');
+    if (String(headers[last] || '') === '') {
       sheet.getRange(1, 1, 1, ERDENET_HEADERS.length).setValues([ERDENET_HEADERS]);
-      headers = ERDENET_HEADERS.slice();
     }
-    if (headers.some(function(value, index) { return value !== ERDENET_HEADERS[index]; })) return jsonOutput({ ok: false });
+    stage = 'check existing registrations';
     var lastRow = sheet.getLastRow();
     // The Sheet is the record of who won what: one prize per phone for the whole event.
     var prizeIds = {};
@@ -98,6 +133,7 @@ function doPost(e) {
       if (labelsChanged) SpreadsheetApp.flush();
       return jsonOutput({ ok: true, requestId: data.id, duplicate: true });
     }
+    stage = 'write registration to Sheet1';
     var prize = ERDENET_TEST_IDS.indexOf(data.id) >= 0 ? 'none' : drawRemainingPrize(remaining);
     var createdAt = Utilities.formatDate(new Date(data.createdAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
     var consentAt = Utilities.formatDate(new Date(data.consentAt), 'Asia/Ulaanbaatar', 'yyyy-MM-dd HH:mm:ss');
@@ -107,7 +143,7 @@ function doPost(e) {
     SpreadsheetApp.flush();
     return jsonOutput({ ok: true, requestId: data.id, id: data.id, prize: prize });
   } catch (error) {
-    return jsonOutput({ ok: false });
+    return rejectLead('could not ' + stage);
   } finally {
     if (lock && lock.hasLock && lock.hasLock()) lock.releaseLock();
     else if (lock && !lock.hasLock) lock.releaseLock();
